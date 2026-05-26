@@ -1,0 +1,156 @@
+import { useTranslation } from 'react-i18next';
+import { Calculator, Info, CheckCircle, AlertCircle } from 'lucide-react';
+import { useFinance } from '../context/FinanceContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+
+export default function TaxesView() {
+  const { t, i18n } = useTranslation();
+  const { expenses, invoices, taxRate, setTaxRate } = useFinance();
+
+  const totalRevenue = invoices
+    .filter(i => i.status === 'Paid')
+    .reduce((sum, i) => sum + i.total, 0);
+  
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const deductibleExpenses = expenses
+    .filter(e => e.isTaxDeductible)
+    .reduce((sum, e) => sum + e.amount, 0);
+  
+  const netProfit = totalRevenue - totalExpenses;
+  const taxableIncome = totalRevenue - deductibleExpenses;
+  const estimatedTax = Math.max(0, taxableIncome * (taxRate / 100));
+
+  const formatCurrency = (value: number) => 
+    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
+      style: 'currency', 
+      currency: 'ILS' 
+    }).format(value);
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">{t('common.taxes')}</h1>
+        <p className="text-slate-500 mt-1">{t('taxes.subtitle')}</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-8">
+          {/* Summary Card */}
+          <Card className="bg-primary text-primary-foreground border-none">
+            <CardContent className="pt-8 pb-8">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                  <p className="text-primary-foreground/80 text-sm font-medium uppercase tracking-wider">{t('dashboard.tax_liability')}</p>
+                  <h2 className="text-5xl font-bold mt-2">{formatCurrency(estimatedTax)}</h2>
+                  <p className="text-primary-foreground/60 text-xs mt-4 flex items-center gap-1">
+                    <Info className="h-3 w-3" /> {t('dashboard.flat_rate', { rate: taxRate })}
+                  </p>
+                </div>
+                <div className="bg-white/10 p-6 rounded-2xl backdrop-blur-md border border-white/20 w-full md:w-auto">
+                  <div className="space-y-4">
+                    <div className="flex justify-between gap-8">
+                      <span className="text-primary-foreground/70 text-sm">{t('taxes.taxable_income')}</span>
+                      <span className="font-bold">{formatCurrency(taxableIncome)}</span>
+                    </div>
+                    <div className="flex justify-between gap-8">
+                      <span className="text-primary-foreground/70 text-sm">{t('dashboard.net_profit')}</span>
+                      <span className="font-bold">{formatCurrency(netProfit)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Deductions Tracker */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('taxes.deductions_tracker')}</CardTitle>
+              <CardDescription>{t('taxes.deductions_subtitle')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-100">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-green-500 p-2 rounded-full">
+                      <CheckCircle className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-green-900">{t('taxes.total_deductible')}</p>
+                      <p className="text-xs text-green-700">{t('taxes.deductible_benefit')}</p>
+                    </div>
+                  </div>
+                  <span className="text-xl font-bold text-green-900">{formatCurrency(deductibleExpenses)}</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {expenses.filter(e => e.isTaxDeductible).slice(0, 4).map(expense => (
+                    <div key={expense.id} className="p-3 border rounded-lg flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium">{expense.vendor}</p>
+                        <p className="text-xs text-slate-500">{expense.category}</p>
+                      </div>
+                      <span className="text-sm font-bold">{formatCurrency(expense.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+                <Button variant="ghost" className="w-full text-slate-500 text-xs">{t('taxes.view_all_deductible')}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Settings / Adjustments */}
+        <div className="space-y-8">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">{t('taxes.configuration')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <label className="text-sm font-medium">{t('invoices.tax_rate')}</label>
+                  <span className="text-sm font-bold text-primary">{taxRate}%</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="50" 
+                  value={taxRate} 
+                  onChange={(e) => setTaxRate(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
+                  <span>0%</span>
+                  <span>25%</span>
+                  <span>50%</span>
+                </div>
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <div className="flex gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    {t('taxes.estimate_warning')}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900 text-white border-none overflow-hidden">
+            <CardContent className="pt-6">
+              <Calculator className="h-10 w-10 text-primary mb-4" />
+              <h3 className="font-bold text-lg">{t('taxes.export_report')}</h3>
+              <p className="text-slate-400 text-sm mt-2">{t('taxes.export_subtitle')}</p>
+              <Button className="w-full mt-6 bg-white text-slate-900 hover:bg-slate-100">
+                {t('taxes.download_report')}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
