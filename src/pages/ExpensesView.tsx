@@ -29,9 +29,15 @@ import { cn } from '../utils/utils';
 type SortKey = 'date' | 'vendor' | 'category' | 'amount';
 type SortDirection = 'asc' | 'desc';
 
+const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: { key: SortKey; direction: SortDirection } }) => {
+  if (sortConfig.key !== column) return <ArrowUpDown className="ms-2 h-4 w-4" />;
+  return sortConfig.direction === 'asc' ? <ArrowUp className="ms-2 h-4 w-4" /> : <ArrowDown className="ms-2 h-4 w-4" />;
+};
+
 export default function ExpensesView() {
   const { t, i18n } = useTranslation();
-  const { expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, deleteCategory } = useFinance();
+  const { expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, deleteCategory, uploadReceipt } = useFinance();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
@@ -131,19 +137,27 @@ export default function ExpensesView() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const data = {
       ...formData,
       amount: parseFloat(formData.amount),
     };
 
+    let expenseId = editingExpense?.id;
     if (editingExpense) {
       updateExpense(editingExpense.id, data);
     } else {
-      addExpense(data);
+      expenseId = uuidv4();
+      addExpense({ ...data, id: expenseId });
     }
+
+    if (selectedFile && expenseId) {
+      await uploadReceipt(selectedFile, expenseId);
+    }
+
     setIsModalOpen(false);
+    setSelectedFile(null);
   };
 
   const exportToCSV = () => {
@@ -176,12 +190,11 @@ export default function ExpensesView() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const url = URL.createObjectURL(file);
+      setSelectedFile(file);
       setFormData(prev => ({ 
         ...prev, 
         receiptStatus: 'Uploaded', 
-        receiptName: file.name,
-        receiptUrl: url
+        receiptName: file.name
       }));
     }
   };
@@ -202,19 +215,13 @@ export default function ExpensesView() {
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      const url = URL.createObjectURL(file);
+      setSelectedFile(file);
       setFormData(prev => ({ 
         ...prev, 
         receiptStatus: 'Uploaded', 
-        receiptName: file.name,
-        receiptUrl: url
+        receiptName: file.name
       }));
     }
-  };
-
-  const SortIcon = ({ column }: { column: SortKey }) => {
-    if (sortConfig.key !== column) return <ArrowUpDown className="ms-2 h-4 w-4" />;
-    return sortConfig.direction === 'asc' ? <ArrowUp className="ms-2 h-4 w-4" /> : <ArrowDown className="ms-2 h-4 w-4" />;
   };
 
   const formatCurrency = (value: number) => 
@@ -347,16 +354,16 @@ export default function ExpensesView() {
               <TableHeader>
                 <TableRow>
                   <TableHead onClick={() => handleSort('date')} className="cursor-pointer hover:text-slate-900 whitespace-nowrap">
-                    <div className="flex items-center">{t('common.date')} <SortIcon column="date" /></div>
+                    <div className="flex items-center">{t('common.date')} <SortIcon column="date" sortConfig={sortConfig} /></div>
                   </TableHead>
                   <TableHead onClick={() => handleSort('vendor')} className="cursor-pointer hover:text-slate-900 whitespace-nowrap">
-                    <div className="flex items-center">{t('expenses.vendor')} <SortIcon column="vendor" /></div>
+                    <div className="flex items-center">{t('expenses.vendor')} <SortIcon column="vendor" sortConfig={sortConfig} /></div>
                   </TableHead>
                   <TableHead onClick={() => handleSort('category')} className="cursor-pointer hover:text-slate-900 whitespace-nowrap">
-                    <div className="flex items-center">{t('expenses.category')} <SortIcon column="category" /></div>
+                    <div className="flex items-center">{t('expenses.category')} <SortIcon column="category" sortConfig={sortConfig} /></div>
                   </TableHead>
                   <TableHead onClick={() => handleSort('amount')} className="cursor-pointer hover:text-slate-900 whitespace-nowrap">
-                    <div className="flex items-center">{t('common.amount')} <SortIcon column="amount" /></div>
+                    <div className="flex items-center">{t('common.amount')} <SortIcon column="amount" sortConfig={sortConfig} /></div>
                   </TableHead>
                   <TableHead className="whitespace-nowrap">{t('expenses.receipt')}</TableHead>
                   <TableHead className="text-end whitespace-nowrap">{t('common.actions')}</TableHead>

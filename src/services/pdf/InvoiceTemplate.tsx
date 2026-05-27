@@ -7,6 +7,11 @@ interface InvoiceTemplateProps {
   business: BusinessSettings;
 }
 
+// Helper to force LTR direction for numbers/IDs in RTL context
+const Ltr = ({ children }: { children: React.ReactNode }) => (
+  <span dir="ltr" className="inline-block">{children}</span>
+);
+
 /**
  * High-fidelity HTML template for the invoice.
  * We use explicit dir="ltr" and inline-block on numbers to ensure 
@@ -24,11 +29,6 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
       style: 'currency', 
       currency: 'ILS' 
     }).format(value);
-
-  // Helper to force LTR direction for numbers/IDs in RTL context
-  const Ltr = ({ children }: { children: React.ReactNode }) => (
-    <span dir="ltr" className="inline-block">{children}</span>
-  );
 
   return (
     <div 

@@ -21,8 +21,10 @@
     "date": "תאריך",
     "amount": "סכום",
     "currency": "₪",
-    "total": "סה\"כ"
-  },
+    "total": "סה״כ",
+    "syncing": "מסנכרן מול Google Drive..."
+    },
+
   "dashboard": {
     "title": "לוח בקרה",
     "subtitle": "סקירה בזמן אמת של ביצועי העסק.",

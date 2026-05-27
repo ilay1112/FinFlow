@@ -1,11 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from './AuthContext';
+import * as googleDrive from '../services/googleDrive';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 
 export interface BusinessSettings {
   name: string;
-  idNumber: string; // H.P or I.D
+  idNumber: string;
   address: string;
   phone: string;
   email: string;
@@ -16,7 +18,7 @@ export interface Expense {
   id: string;
   date: string;
   vendor: string;
-  category: string; // Changed from union to string
+  category: string;
   amount: number;
   isTaxDeductible: boolean;
   receiptStatus: 'Uploaded' | 'Missing';
@@ -56,9 +58,12 @@ interface FinanceContextType {
   expenses: Expense[];
   clients: Client[];
   invoices: Invoice[];
-  categories: string[]; // Dynamic categories
+  categories: string[];
   taxRate: number;
   businessSettings: BusinessSettings;
+  isLoading: boolean;
+  isSyncing: boolean;
+  syncError: string | null;
   addExpense: (expense: Omit<Expense, 'id'>) => void;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
@@ -68,10 +73,11 @@ interface FinanceContextType {
   addInvoice: (invoice: Omit<Invoice, 'id' | 'total'>) => void;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
-  addCategory: (category: string) => void; // New
-  deleteCategory: (category: string) => void; // New
+  addCategory: (category: string) => void;
+  deleteCategory: (category: string) => void;
   setTaxRate: (rate: number) => void;
   updateBusinessSettings: (settings: BusinessSettings) => void;
+  uploadReceipt: (file: File, expenseId: string) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -79,97 +85,112 @@ const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 const DEFAULT_CATEGORIES = ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'];
 
 const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
-  name: 'John Doe Financials',
-  idNumber: '123456789',
-  address: 'Herzl 123, Tel Aviv',
-  phone: '050-0000000',
-  email: 'john@example.com',
+  name: '',
+  idNumber: '',
+  address: '',
+  phone: '',
+  email: '',
   type: 'EsekPatur'
 };
 
-const INITIAL_EXPENSES: Expense[] = [
-  { id: uuidv4(), date: '2026-05-01', vendor: 'Google Cloud', category: 'Software', amount: 150.00, isTaxDeductible: true, receiptStatus: 'Uploaded' },
-  { id: uuidv4(), date: '2026-05-05', vendor: 'WeWork', category: 'Rent', amount: 1200.00, isTaxDeductible: true, receiptStatus: 'Uploaded' },
-  { id: uuidv4(), date: '2026-05-10', vendor: 'Staples', category: 'Supplies', amount: 45.50, isTaxDeductible: true, receiptStatus: 'Missing' },
-  { id: uuidv4(), date: '2026-05-15', vendor: 'Meta Ads', category: 'Marketing', amount: 500.00, isTaxDeductible: true, receiptStatus: 'Uploaded' },
-  { id: uuidv4(), date: '2026-05-20', vendor: 'Starbucks', category: 'Travel', amount: 12.75, isTaxDeductible: false, receiptStatus: 'Missing' },
-];
-
-const INITIAL_CLIENTS: Client[] = [
-  { id: uuidv4(), name: 'Acme Corp', email: 'billing@acme.com', phone: '555-0101', address: '123 Business Way, New York', totalBilled: 5000 },
-  { id: uuidv4(), name: 'Global Tech', email: 'finance@globaltech.io', phone: '555-0202', address: '456 Innovation Dr, San Francisco', totalBilled: 12500 },
-  { id: uuidv4(), name: 'Local Cafe', email: 'hello@localcafe.com', phone: '555-0303', address: '789 Main St, Anytown', totalBilled: 800 },
-];
-
-const INITIAL_INVOICES: Invoice[] = [
-  { 
-    id: 'INV-001', 
-    clientId: INITIAL_CLIENTS[0].id, 
-    clientName: 'Acme Corp',
-    date: '2026-05-01', 
-    dueDate: '2026-05-31', 
-    items: [{ id: uuidv4(), description: 'Q2 Consulting', quantity: 1, unitPrice: 5000 }],
-    taxRate: 0,
-    total: 5000,
-    status: 'Paid'
-  },
-  { 
-    id: 'INV-002', 
-    clientId: INITIAL_CLIENTS[1].id, 
-    clientName: 'Global Tech',
-    date: '2026-05-15', 
-    dueDate: '2026-06-15', 
-    items: [{ id: uuidv4(), description: 'Software Development', quantity: 40, unitPrice: 150 }],
-    taxRate: 17,
-    total: 7020,
-    status: 'Sent'
-  },
-];
-
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [expenses, setExpenses] = useState<Expense[]>(() => {
-    const saved = localStorage.getItem('finance_expenses');
-    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
-  });
+  const { accessToken, isAuthenticated } = useAuth();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [taxRate, setTaxRate] = useState<number>(20);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(DEFAULT_BUSINESS_SETTINGS);
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  
+  const driveFileId = useRef<string | null>(null);
+  const isInitialLoad = useRef(true);
 
-  const [categories, setCategories] = useState<string[]>(() => {
-    const saved = localStorage.getItem('finance_categories');
-    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
-  });
-
-  const [clients, setClients] = useState<Client[]>(() => {
-    const saved = localStorage.getItem('finance_clients');
-    const parsed = saved ? JSON.parse(saved) : INITIAL_CLIENTS;
-    return parsed.map((c: any) => ({ ...c, address: c.address || '' }));
-  });
-
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    const saved = localStorage.getItem('finance_invoices');
-    return saved ? JSON.parse(saved) : INITIAL_INVOICES;
-  });
-
-  const [taxRate, setTaxRate] = useState<number>(() => {
-    const saved = localStorage.getItem('finance_tax_rate');
-    return saved ? Number(saved) : 20;
-  });
-
-  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(() => {
-    const saved = localStorage.getItem('finance_business_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_BUSINESS_SETTINGS;
-  });
-
+  // Initial Load from LocalStorage (Fallback)
   useEffect(() => {
+    const loadLocalData = () => {
+      const savedExpenses = localStorage.getItem('finance_expenses');
+      const savedCategories = localStorage.getItem('finance_categories');
+      const savedClients = localStorage.getItem('finance_clients');
+      const savedInvoices = localStorage.getItem('finance_invoices');
+      const savedTaxRate = localStorage.getItem('finance_tax_rate');
+      const savedSettings = localStorage.getItem('finance_business_settings');
+
+      if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
+      if (savedCategories) setCategories(JSON.parse(savedCategories));
+      if (savedClients) setClients(JSON.parse(savedClients));
+      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
+      if (savedTaxRate) setTaxRate(Number(savedTaxRate));
+      if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
+    };
+
+    requestAnimationFrame(loadLocalData);
+  }, []);
+
+  // Sync from Google Drive on Authentication
+  useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      const syncFromDrive = async () => {
+        setIsLoading(true);
+        try {
+          const fileId = await googleDrive.initAppState(accessToken);
+          driveFileId.current = fileId;
+          const driveData = await googleDrive.fetchAppState(accessToken, fileId);
+          
+          setExpenses(driveData.expenses || []);
+          setCategories(driveData.categories || DEFAULT_CATEGORIES);
+          setClients(driveData.clients || []);
+          setInvoices(driveData.invoices || []);
+          setTaxRate(driveData.taxRate || 20);
+          setBusinessSettings(driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS);
+          
+          isInitialLoad.current = false;
+        } catch (error: any) {
+          console.error('Drive Sync Error:', error);
+          setSyncError(`Drive Sync Error: ${error.message || 'Unknown error'}`);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      syncFromDrive();
+    }
+  }, [isAuthenticated, accessToken]);
+
+  // Persistent LocalStorage and Auto-Save to Drive
+  useEffect(() => {
+    // Always save to localStorage as backup
     localStorage.setItem('finance_expenses', JSON.stringify(expenses));
     localStorage.setItem('finance_categories', JSON.stringify(categories));
     localStorage.setItem('finance_clients', JSON.stringify(clients));
     localStorage.setItem('finance_invoices', JSON.stringify(invoices));
     localStorage.setItem('finance_tax_rate', taxRate.toString());
     localStorage.setItem('finance_business_settings', JSON.stringify(businessSettings));
-  }, [expenses, categories, clients, invoices, taxRate, businessSettings]);
 
-  const addExpense = (expense: Omit<Expense, 'id'>) => {
-    const newExpense = { ...expense, id: uuidv4() };
-    setExpenses(prev => [newExpense, ...prev]);
+    // Save to Drive if authenticated and not during initial fetch
+    if (isAuthenticated && accessToken && driveFileId.current && !isInitialLoad.current) {
+      const timer = setTimeout(async () => {
+        setIsSyncing(true);
+        try {
+          await googleDrive.saveAppState(accessToken, driveFileId.current!, {
+            expenses, categories, clients, invoices, taxRate, businessSettings
+          });
+          setSyncError(null);
+        } catch (error) {
+          console.error('Drive Save Error:', error);
+          setSyncError('Sync delayed: Network or quota issue. Data saved locally.');
+        } finally {
+          setIsSyncing(false);
+        }
+      }, 1000); // Debounce saves
+      return () => clearTimeout(timer);
+    }
+  }, [expenses, categories, clients, invoices, taxRate, businessSettings, isAuthenticated, accessToken]);
+
+  const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
+    setExpenses(prev => [{ ...expense, id: expense.id || uuidv4() }, ...prev]);
   };
 
   const updateExpense = (id: string, updates: Partial<Expense>) => {
@@ -181,8 +202,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addClient = (client: Omit<Client, 'id' | 'totalBilled'>) => {
-    const newClient = { ...client, id: uuidv4(), totalBilled: 0 };
-    setClients(prev => [...prev, newClient]);
+    setClients(prev => [...prev, { ...client, id: uuidv4(), totalBilled: 0 }]);
   };
 
   const updateClient = (id: string, updates: Partial<Client>) => {
@@ -202,10 +222,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
     const taxAmount = subtotal * (invoice.taxRate / 100);
     const total = subtotal + taxAmount;
-    
     const newInvoice = { ...invoice, id: `INV-${Math.floor(1000 + Math.random() * 9000)}`, total };
-    setInvoices(prev => [newInvoice, ...prev]);
     
+    setInvoices(prev => [newInvoice, ...prev]);
     setClients(prev => prev.map(c => 
       c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
     ));
@@ -229,30 +248,48 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addCategory = (category: string) => {
-    setCategories(prev => {
-      if (prev.includes(category)) return prev;
-      return [...prev, category];
-    });
+    setCategories(prev => prev.includes(category) ? prev : [...prev, category]);
   };
 
   const deleteCategory = (category: string) => {
     setCategories(prev => prev.filter(c => c !== category));
   };
 
-  const setTaxRateHandler = (rate: number) => {
-    setTaxRate(rate);
-  };
+  const setTaxRateHandler = (rate: number) => setTaxRate(rate);
 
-  const updateBusinessSettings = (settings: BusinessSettings) => {
-    setBusinessSettings(settings);
+  const updateBusinessSettings = (settings: BusinessSettings) => setBusinessSettings(settings);
+
+  const uploadReceipt = async (file: File, expenseId: string) => {
+    if (!isAuthenticated || !accessToken) return;
+    
+    setIsSyncing(true);
+    try {
+      const expense = expenses.find(e => e.id === expenseId);
+      const url = await googleDrive.uploadReceiptToDrive(accessToken, file, {
+        vendor: expense?.vendor || 'Unknown',
+        date: expense?.date || new Date().toISOString().split('T')[0]
+      });
+      
+      updateExpense(expenseId, { 
+        receiptStatus: 'Uploaded', 
+        receiptUrl: url,
+        receiptName: file.name
+      });
+    } catch (error) {
+      console.error('Receipt Upload Error:', error);
+      setSyncError('Failed to upload receipt to Drive.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
     <FinanceContext.Provider value={{ 
       expenses, clients, invoices, categories, taxRate, businessSettings,
+      isLoading, isSyncing, syncError,
       addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient, 
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
-      setTaxRate: setTaxRateHandler, updateBusinessSettings 
+      setTaxRate: setTaxRateHandler, updateBusinessSettings, uploadReceipt
     }}>
       {children}
     </FinanceContext.Provider>

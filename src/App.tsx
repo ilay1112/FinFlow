@@ -1,15 +1,20 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { FinanceProvider } from './context/FinanceContext';
 import { AppLayout } from './layouts/AppLayout';
+import { AlertCircle } from 'lucide-react';
 
-// Lazy load pages for code-splitting
-const DashboardPage = lazy(() => import('./pages/DashboardView'));
-const ExpensesPage = lazy(() => import('./pages/ExpensesView'));
-const InvoicesPage = lazy(() => import('./pages/InvoicesView'));
-const ClientsPage = lazy(() => import('./pages/ClientsView'));
-const TaxesPage = lazy(() => import('./pages/TaxesView'));
-const ProfilePage = lazy(() => import('./pages/ProfileView'));
+// Google Client ID - Replace with your actual ID from Google Cloud Console
+const GOOGLE_CLIENT_ID = "254930265326-oataevudj1gi4f876td4sijt8ufhch0i.apps.googleusercontent.com";
+
+import LoginPage from './pages/LoginView';
+import DashboardPage from './pages/DashboardView';
+import ExpensesPage from './pages/ExpensesView';
+import InvoicesPage from './pages/InvoicesView';
+import ClientsPage from './pages/ClientsView';
+import TaxesPage from './pages/TaxesView';
+import ProfilePage from './pages/ProfileView';
 
 // Loading fallback
 const Loading = () => (
@@ -21,25 +26,107 @@ const Loading = () => (
   </div>
 );
 
-function App() {
+// Protected Route Wrapper
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) return <Loading />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  return <>{children}</>;
+};
+
+function AppRoutes() {
   return (
-    <FinanceProvider>
-      <BrowserRouter>
-        <Suspense fallback={<Loading />}>
-          <Routes>
-            <Route path="/" element={<AppLayout />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="expenses" element={<ExpensesPage />} />
-              <Route path="invoices" element={<InvoicesPage />} />
-              <Route path="clients" element={<ClientsPage />} />
-              <Route path="taxes" element={<TaxesPage />} />
-              <Route path="profile" element={<ProfilePage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </FinanceProvider>
+    <Routes>
+      {/* Public Landing/Login Page */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Protected Application Routes */}
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DashboardPage />} />
+        <Route path="expenses" element={<ExpensesPage />} />
+        <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="clients" element={<ClientsPage />} />
+        <Route path="taxes" element={<TaxesPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+      </Route>
+
+      {/* Catch-all redirect */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+import { Component, type ReactNode } from 'react';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-red-600 bg-red-50 border border-red-200 rounded-lg m-4">
+          <h2 className="text-xl font-bold">Application Error</h2>
+          <p className="mt-2 text-sm font-mono">{this.state.error?.message}</p>
+          <button 
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-bold"
+            onClick={() => window.location.reload()}
+          >
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function App() {
+  const isConfigured = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith("YOUR_");
+
+  if (!isConfigured) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border max-w-md space-y-4">
+          <div className="bg-amber-100 p-3 rounded-full w-fit mx-auto">
+            <AlertCircle className="h-8 w-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">Config Required</h2>
+          <p className="text-slate-600 text-sm">Please set your Google Client ID in App.tsx.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <AuthProvider>
+          <FinanceProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </FinanceProvider>
+        </AuthProvider>
+      </GoogleOAuthProvider>
+    </ErrorBoundary>
   );
 }
 
 export default App;
+

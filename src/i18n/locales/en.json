@@ -21,7 +21,8 @@
     "date": "Date",
     "amount": "Amount",
     "currency": "ILS",
-    "total": "Total"
+    "total": "Total",
+    "syncing": "Syncing with Drive..."
   },
   "dashboard": {
     "title": "Dashboard",

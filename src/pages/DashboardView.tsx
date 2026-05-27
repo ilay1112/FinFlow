@@ -46,6 +46,32 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 type TimeRange = 'CurrentMonth' | 'CurrentYear';
 
+interface TrendBadgeProps {
+  change: number;
+  reverse?: boolean;
+  timeRange: TimeRange;
+  isRtl: boolean;
+  t: (key: string) => string;
+}
+
+const TrendBadge = ({ change, reverse = false, timeRange, isRtl, t }: TrendBadgeProps) => {
+  const isNeutral = Math.abs(change) < 0.1;
+  const isPositive = reverse ? change < 0 : change > 0;
+  const colorClass = isNeutral ? "text-slate-400" : isPositive ? "text-green-600" : "text-red-600";
+  const Icon = isNeutral ? Minus : isPositive ? ArrowUpRight : ArrowDownRight;
+
+  const comparisonText = timeRange === 'CurrentMonth' 
+    ? t('dashboard.vs_last_month') 
+    : t('dashboard.vs_last_year');
+
+  return (
+    <p className={cn("text-[10px] md:text-xs flex items-center mt-1 font-medium", colorClass)}>
+      <Icon className={cn("h-3 w-3 me-1", isRtl && "scale-x-[-1]")} />
+      {isNeutral ? t('dashboard.no_change') : `${Math.abs(change).toFixed(1)}% ${comparisonText}`}
+    </p>
+  );
+};
+
 export default function DashboardView() {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'he';
@@ -126,7 +152,7 @@ export default function DashboardView() {
     });
   }, [invoices, expenses, start, end]);
 
-  const categoryData = currentExpenses.reduce((acc: any[], expense) => {
+  const categoryData = currentExpenses.reduce((acc: { name: string; value: number }[], expense) => {
     const existing = acc.find(item => item.name === expense.category);
     if (existing) {
       existing.value += expense.amount;
@@ -141,24 +167,6 @@ export default function DashboardView() {
       style: 'currency', 
       currency: 'ILS' 
     }).format(value);
-
-  const TrendBadge = ({ change, reverse = false }: { change: number, reverse?: boolean }) => {
-    const isNeutral = Math.abs(change) < 0.1;
-    const isPositive = reverse ? change < 0 : change > 0;
-    const colorClass = isNeutral ? "text-slate-400" : isPositive ? "text-green-600" : "text-red-600";
-    const Icon = isNeutral ? Minus : isPositive ? ArrowUpRight : ArrowDownRight;
-
-    const comparisonText = timeRange === 'CurrentMonth' 
-      ? t('dashboard.vs_last_month') 
-      : t('dashboard.vs_last_year');
-
-    return (
-      <p className={cn("text-[10px] md:text-xs flex items-center mt-1 font-medium", colorClass)}>
-        <Icon className={cn("h-3 w-3 me-1", isRtl && "scale-x-[-1]")} />
-        {isNeutral ? t('dashboard.no_change') : `${Math.abs(change).toFixed(1)}% ${comparisonText}`}
-      </p>
-    );
-  };
 
   const toggleRange = () => {
     setTimeRange(prev => prev === 'CurrentYear' ? 'CurrentMonth' : 'CurrentYear');
@@ -198,7 +206,7 @@ export default function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="text-xl md:text-2xl font-black text-slate-900">{formatCurrency(currentRevenue)}</div>
-            <TrendBadge change={revenueChange} />
+            <TrendBadge change={revenueChange} timeRange={timeRange} isRtl={isRtl} t={t} />
           </CardContent>
         </Card>
 
@@ -212,7 +220,7 @@ export default function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="text-xl md:text-2xl font-black text-slate-900">{formatCurrency(totalExpenses)}</div>
-            <TrendBadge change={expenseChange} reverse />
+            <TrendBadge change={expenseChange} reverse timeRange={timeRange} isRtl={isRtl} t={t} />
           </CardContent>
         </Card>
 
@@ -226,7 +234,7 @@ export default function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="text-xl md:text-2xl font-black text-slate-900">{formatCurrency(netProfit)}</div>
-            <TrendBadge change={profitChange} />
+            <TrendBadge change={profitChange} timeRange={timeRange} isRtl={isRtl} t={t} />
           </CardContent>
         </Card>
 
@@ -269,7 +277,7 @@ export default function DashboardView() {
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', textAlign: isRtl ? 'right' : 'left', fontSize: '11px' }}
-                  formatter={(value: any) => formatCurrency(Number(value))}
+                  formatter={(value: number) => formatCurrency(value)}
                 />
                 <Legend iconType="circle" verticalAlign="top" align="right" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
                 <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} name={t('invoices.paid')} barSize={window.innerWidth < 768 ? 15 : 30} />
@@ -305,7 +313,7 @@ export default function DashboardView() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value: any) => formatCurrency(Number(value))} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>

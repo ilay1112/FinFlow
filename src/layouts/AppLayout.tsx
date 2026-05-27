@@ -9,14 +9,23 @@ import {
   Calculator, 
   Menu,
   CreditCard,
-  X
+  X,
+  LogOut,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '../utils/utils';
 import { Button } from '../components/ui/Button';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useAuth } from '../context/AuthContext';
+import { useFinance } from '../context/FinanceContext';
 
 export function AppLayout() {
   const { t, i18n } = useTranslation();
+  const { user, logout, isAuthenticated } = useAuth();
+  const { isLoading, isSyncing, syncError } = useFinance();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const isRtl = i18n.language === 'he';
 
@@ -30,6 +39,16 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
+      {/* Sync Status Overlay / Loading */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <RefreshCw className="h-10 w-10 text-primary animate-spin" />
+            <p className="text-slate-600 font-medium animate-pulse">{t('common.syncing') || 'Syncing with Drive...'}</p>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
@@ -41,11 +60,7 @@ export function AppLayout() {
       {/* Sidebar */}
       <aside className={cn(
         "fixed inset-y-0 z-50 w-64 bg-white border-e transform transition-transform duration-200 md:relative md:translate-x-0",
-        // Position logic: LTR uses left-0, RTL uses right-0
         isRtl ? "right-0" : "left-0",
-        // Visibility logic: 
-        // When open: translate-x-0 (both)
-        // When closed: -translate-x-full (LTR), translate-x-full (RTL)
         isSidebarOpen 
           ? "translate-x-0" 
           : isRtl ? "translate-x-full" : "-translate-x-full"
@@ -87,48 +102,88 @@ export function AppLayout() {
             ))}
           </nav>
 
-          <div className="p-4 border-t bg-slate-50 flex flex-col gap-2">
-            <LanguageSwitcher />
-            
-            <NavLink
-              to="/profile"
-              className="flex items-center gap-3 px-4 py-2 hover:bg-slate-100 rounded-lg transition-colors"
-            >
-              <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0">
-                JD
+          <div className="p-4 border-t bg-slate-50 flex flex-col gap-3">
+            <div className="px-2">
+              <LanguageSwitcher />
+            </div>
+
+            {isAuthenticated && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-md border shadow-sm text-[10px] font-semibold uppercase tracking-wider">
+                  {isSyncing ? (
+                    <RefreshCw className="h-3 w-3 text-indigo-500 animate-spin" />
+                  ) : syncError ? (
+                    <CloudOff className="h-3 w-3 text-red-500" />
+                  ) : (
+                    <Cloud className="h-3 w-3 text-green-500" />
+                  )}
+                  <span className={cn(
+                    "flex-1 truncate",
+                    syncError ? "text-red-600" : "text-slate-500"
+                  )}>
+                    {isSyncing ? 'Syncing...' : syncError ? 'Offline' : 'Drive Synced'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 px-2">
+                  <img src={user?.picture} alt={user?.name} className="h-8 w-8 rounded-full border shadow-sm" />
+                  <div className="flex-1 overflow-hidden">
+                    <p className="text-sm font-medium text-slate-900 truncate">{user?.name}</p>
+                    <button 
+                      onClick={logout}
+                      className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors"
+                    >
+                      <LogOut className="h-2.5 w-2.5" /> Sign Out
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium text-slate-900 truncate">John Doe</p>
-                <p className="text-xs text-slate-500 truncate">{t('common.profile')}</p>
-              </div>
-            </NavLink>
+            )}
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="md:hidden" 
-            onClick={() => setIsSidebarOpen(true)}
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shrink-0">
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="md:hidden" 
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <Menu className="h-6 w-6" />
+            </Button>
+            
+            <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-500">
+              <span>Workspace</span>
+              <span className="text-slate-300">/</span>
+              <span className="text-slate-900">Small Business</span>
+            </div>
+          </div>
           
           <div className="flex-1 md:hidden text-center font-bold text-xl">
             FinFlow
           </div>
 
-          <div className="hidden md:flex items-center gap-4">
-            <h1 className="text-sm font-medium text-slate-500">Workspace / Small Business</h1>
+          <div className="flex items-center gap-4">
+            {syncError && (
+              <div className="hidden md:flex items-center gap-2 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full border border-red-100">
+                <AlertCircle className="h-3.5 w-3.5" />
+                {syncError}
+              </div>
+            )}
+            {isAuthenticated && (
+               <NavLink to="/profile" className="hidden md:block">
+                 <img src={user?.picture} alt={user?.name} className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all" />
+               </NavLink>
+            )}
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto bg-slate-50/50">
+          <div className="max-w-7xl mx-auto p-4 md:p-8">
             <Outlet />
           </div>
         </main>

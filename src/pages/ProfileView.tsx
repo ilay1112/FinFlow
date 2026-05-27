@@ -1,16 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFinance, type BusinessSettings, type BusinessType } from '../context/FinanceContext';
+import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Cloud, LogOut } from 'lucide-react';
 
 export default function ProfileView() {
   const { t } = useTranslation();
   const { businessSettings, updateBusinessSettings } = useFinance();
+  const { user, isAuthenticated, logout, login } = useAuth();
   const [formData, setFormData] = useState<BusinessSettings>(businessSettings);
   const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      setFormData(businessSettings);
+    });
+  }, [businessSettings]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +33,41 @@ export default function ProfileView() {
         <h1 className="text-3xl font-bold text-slate-900">{t('profile.title')}</h1>
         <p className="text-slate-500 mt-1">{t('profile.subtitle')}</p>
       </div>
+
+      {/* Cloud Sync Status */}
+      <Card className="border-indigo-100 bg-indigo-50/30">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-indigo-700">
+              <Cloud className="h-5 w-5" />
+              <CardTitle className="text-indigo-900">Cloud Synchronization</CardTitle>
+            </div>
+            {isAuthenticated ? (
+              <Button variant="outline" size="sm" onClick={logout} className="text-red-600 border-red-200 hover:bg-red-50">
+                <LogOut className="h-4 w-4 mr-2" /> Disconnect
+              </Button>
+            ) : (
+              <Button size="sm" onClick={login}>Connect Drive</Button>
+            )}
+          </div>
+          <CardDescription>
+            {isAuthenticated 
+              ? `Connected to ${user?.email}. Your data is automatically backed up to Google Drive.`
+              : 'Connect your Google account to sync data across devices and backup receipts.'}
+          </CardDescription>
+        </CardHeader>
+        {isAuthenticated && (
+          <CardContent>
+            <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-indigo-100 shadow-sm">
+              <img src={user?.picture} alt={user?.name} className="h-12 w-12 rounded-full border-2 border-indigo-200" />
+              <div>
+                <p className="font-bold text-slate-900">{user?.name}</p>
+                <p className="text-sm text-slate-500">{user?.email}</p>
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       <Card>
         <CardHeader>
