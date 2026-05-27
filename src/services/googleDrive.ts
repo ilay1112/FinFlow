@@ -1,13 +1,15 @@
+import type { Expense, Client, Invoice, BusinessSettings } from '../context/FinanceContext';
+
 const APP_DATA_FILENAME = 'business_app_data.json';
 const RECEIPTS_FOLDER_NAME = 'Business App Receipts';
 
 export interface AppState {
-  expenses: Record<string, unknown>[];
-  clients: Record<string, unknown>[];
-  invoices: Record<string, unknown>[];
+  expenses: Expense[];
+  clients: Client[];
+  invoices: Invoice[];
   categories: string[];
   taxRate: number;
-  businessSettings: Record<string, unknown>;
+  businessSettings: BusinessSettings;
 }
 
 interface DriveFile {
@@ -27,7 +29,7 @@ const DEFAULT_STATE: AppState = {
   invoices: [],
   categories: ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'],
   taxRate: 20,
-  businessSettings: {}
+  businessSettings: {} as BusinessSettings
 };
 
 /**

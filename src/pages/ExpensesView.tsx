@@ -161,7 +161,7 @@ export default function ExpensesView() {
         updateExpense(editingExpense.id, data);
       } else {
         expenseId = uuidv4();
-        addExpense({ ...data, id: expenseId });
+        addExpense({ ...data, id: expenseId } as Expense);
       }
 
       // Close modal immediately for better UX

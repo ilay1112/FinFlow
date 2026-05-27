@@ -140,12 +140,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           driveFileId.current = fileId;
           const driveData = await googleDrive.fetchAppState(accessToken, fileId);
           
-          setExpenses(driveData.expenses || []);
+          setExpenses((driveData.expenses || []) as unknown as Expense[]);
           setCategories(driveData.categories || DEFAULT_CATEGORIES);
-          setClients(driveData.clients || []);
-          setInvoices(driveData.invoices || []);
+          setClients((driveData.clients || []) as unknown as Client[]);
+          setInvoices((driveData.invoices || []) as unknown as Invoice[]);
           setTaxRate(driveData.taxRate ?? 20);
-          setBusinessSettings(driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS);
+          setBusinessSettings((driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS) as unknown as BusinessSettings);
           
           isInitialLoad.current = false;
         } catch (error) {
