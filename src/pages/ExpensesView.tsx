@@ -7,6 +7,7 @@ import {
   Trash2,
   Edit2,
   Eye,
+  ExternalLink,
   FileText,
   ArrowUpDown,
   ArrowUp,
@@ -163,12 +164,16 @@ export default function ExpensesView() {
         addExpense({ ...data, id: expenseId });
       }
 
+      // Close modal immediately for better UX
+      setIsModalOpen(false);
+
       if (selectedFile && expenseId) {
         console.log('Uploading receipt...');
-        await uploadReceipt(selectedFile, expenseId);
+        // We don't await here to let the modal close immediately
+        // but FinanceContext will still track the 'isSyncing' state
+        uploadReceipt(selectedFile, expenseId);
       }
 
-      setIsModalOpen(false);
       setSelectedFile(null);
       console.log('Expense saved successfully');
     } catch (error) {
@@ -467,21 +472,24 @@ export default function ExpensesView() {
         title={`${t('expenses.receipt')}: ${viewingReceipt?.vendor}`}
       >
         <div className="space-y-4">
-          <div className="aspect-[3/4] w-full bg-slate-100 rounded-lg border overflow-hidden">
+          <div className="aspect-[3/4] w-full bg-slate-100 rounded-lg border overflow-hidden flex flex-col items-center justify-center text-center p-8">
+            <FileText className="h-20 w-20 text-indigo-500 mb-4 opacity-40" />
+            <h3 className="text-lg font-bold text-slate-900">{viewingReceipt?.receiptName || 'Receipt File'}</h3>
+            <p className="text-sm text-slate-500 mt-2 mb-6">
+              Google Drive prevents direct previews in some browsers for security. 
+              Click below to view the receipt safely in a new tab.
+            </p>
             {viewingReceipt?.receiptUrl ? (
-              <iframe 
-                src={viewingReceipt.receiptUrl} 
-                className="w-full h-full border-none"
-                title={viewingReceipt.receiptName}
-              />
+              <Button asChild className="gap-2 font-bold px-8 shadow-md">
+                <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4" /> {t('expenses.view_receipt') || 'Open in Drive'}
+                </a>
+              </Button>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                <FileText className="h-16 w-16 mb-4 opacity-20" />
-                <p className="text-sm font-medium">{viewingReceipt?.receiptName || 'receipt_sample.pdf'}</p>
-                <p className="text-xs mt-2 italic">(Preview not available for mock data)</p>
-              </div>
+              <p className="text-xs italic text-slate-400">(Preview not available for mock data)</p>
             )}
           </div>
+          
           <div className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-lg border">
             <div>
               <p className="text-slate-500">{t('common.amount')}</p>
