@@ -19,8 +19,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('auth_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [accessToken, setAccessToken] = useState<string | null>(() => {
+    const token = localStorage.getItem('auth_token');
+    const expiry = localStorage.getItem('auth_expiry');
+    if (token && expiry && Date.now() < Number(expiry)) {
+      return token;
+    }
+    return null;
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchUserProfile = async (token: string) => {
@@ -29,11 +39,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      setUser({
+      const profile = {
         name: data.name,
         email: data.email,
         picture: data.picture,
-      });
+      };
+      setUser(profile);
+      localStorage.setItem('auth_user', JSON.stringify(profile));
     } catch (error) {
       console.error('Failed to fetch user profile:', error);
       logout();
@@ -43,6 +55,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useGoogleLogin({
     onSuccess: (tokenResponse: TokenResponse) => {
       setAccessToken(tokenResponse.access_token);
+      // Google tokens usually last 1 hour (3600 seconds)
+      const expiry = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
+      localStorage.setItem('auth_token', tokenResponse.access_token);
+      localStorage.setItem('auth_expiry', expiry.toString());
       fetchUserProfile(tokenResponse.access_token);
       setIsLoading(false);
     },
@@ -63,6 +79,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     googleLogout();
     setUser(null);
     setAccessToken(null);
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_expiry');
   };
 
   return (
