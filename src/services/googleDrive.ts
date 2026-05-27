@@ -190,25 +190,32 @@ async function setPublicPermission(token: string, fileId: string): Promise<void>
 
 /**
  * Creates "Business App Receipts" folder inside "FinFlow Data" and uploads file.
+ * Automatically nests the file inside a year-specific folder (e.g., "2025").
  */
 export async function uploadReceiptToDrive(token: string, file: File, metadata: { vendor: string; date: string }): Promise<string> {
-  // 1. Find or create root folder
+  // 1. Find or create root folder "FinFlow Data"
   let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
   if (!rootId) {
     rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
   }
 
-  // 2. Find or create receipts folder inside root folder
-  let folderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true, rootId);
-  if (!folderId) {
-    folderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true, rootId);
-    // Also make the folder "anyone with link" if desired, but let's stick to files for now
+  // 2. Find or create receipts folder "Business App Receipts" inside root folder
+  let receiptsFolderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true, rootId);
+  if (!receiptsFolderId) {
+    receiptsFolderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true, rootId);
+  }
+
+  // 3. Extract year and find or create year folder inside receipts folder
+  const year = new Date(metadata.date).getFullYear().toString();
+  let yearFolderId = await findFileId(token, year, true, receiptsFolderId);
+  if (!yearFolderId) {
+    yearFolderId = await createFile(token, year, null, true, receiptsFolderId);
   }
 
   const filename = `${metadata.date}_${metadata.vendor}_${file.name}`;
   const fileMetadata = {
     name: filename,
-    parents: [folderId],
+    parents: [yearFolderId],
   };
 
   const form = new FormData();
