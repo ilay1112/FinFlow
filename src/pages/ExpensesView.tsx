@@ -25,6 +25,7 @@ import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { CategoryManagerModal } from '../components/ui/CategoryManagerModal';
 import { cn } from '../utils/utils';
+import { v4 as uuidv4 } from 'uuid';
 
 type SortKey = 'date' | 'vendor' | 'category' | 'amount';
 type SortDirection = 'asc' | 'desc';
