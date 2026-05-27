@@ -198,7 +198,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
   };
 
-  const deleteExpense = (id: string) => {
+  const deleteExpense = async (id: string) => {
+    const expense = expenses.find(e => e.id === id);
+    if (expense?.receiptUrl && isAuthenticated && accessToken) {
+      try {
+        const fileId = expense.receiptUrl.match(/\/d\/(.+?)\//)?.[1];
+        if (fileId) {
+          await googleDrive.deleteFile(accessToken, fileId);
+          console.log('Receipt file deleted from Drive');
+        }
+      } catch (error) {
+        console.error('Failed to delete receipt file from Drive:', error);
+      }
+    }
     setExpenses(prev => prev.filter(e => e.id !== id));
   };
 

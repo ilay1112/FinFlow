@@ -133,9 +133,9 @@ export default function ExpensesView() {
     setIsDeleteAlertOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (expenseToDelete) {
-      deleteExpense(expenseToDelete);
+      await deleteExpense(expenseToDelete);
       setExpenseToDelete(null);
     }
   };

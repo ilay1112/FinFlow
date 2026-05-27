@@ -141,6 +141,22 @@ export async function saveAppState(token: string, fileId: string, data: AppState
 }
 
 /**
+ * Deletes a file from Google Drive by its ID.
+ */
+export async function deleteFile(token: string, fileId: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Drive API Delete Error:', response.status, errorData);
+    throw new Error(`Drive API Delete Failed: ${response.status} ${errorData.error?.message || ''}`);
+  }
+}
+
+/**
  * Sets the permission of a file to "anyone with the link" as a reader.
  * This prevents "You need access" errors when the user is logged into multiple Google accounts.
  */
