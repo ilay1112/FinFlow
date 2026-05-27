@@ -30,28 +30,28 @@ export default function LoginView() {
   const features = [
     {
       title: t('common.dashboard'),
-      description: 'Get a clear, real-time overview of your revenue, expenses, and net profit with intuitive charts.',
+      description: t('login.feature_dashboard_desc'),
       icon: LayoutDashboard,
       color: 'text-blue-600',
       bg: 'bg-blue-100'
     },
     {
       title: t('common.expenses'),
-      description: 'Snap or upload receipts directly to your Google Drive. We handle the storage, you handle the growth.',
+      description: t('login.feature_expenses_desc'),
       icon: Receipt,
       color: 'text-amber-600',
       bg: 'bg-amber-100'
     },
     {
       title: t('common.invoices'),
-      description: 'Professional Hebrew/English PDF invoicing. Send beautiful invoices that reflect your brand.',
+      description: t('login.feature_invoices_desc'),
       icon: FileText,
       color: 'text-indigo-600',
       bg: 'bg-indigo-100'
     },
     {
       title: t('common.taxes'),
-      description: 'Stay ahead of tax season with real-time liability estimates and deductible tracking.',
+      description: t('login.feature_taxes_desc'),
       icon: Calculator,
       color: 'text-green-600',
       bg: 'bg-green-100'
@@ -79,15 +79,13 @@ export default function LoginView() {
           <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8 text-center lg:text-start">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100 text-xs font-bold uppercase tracking-wider">
-                <Zap className="h-3 w-3" /> 100% Free Forever
+                <Zap className="h-3 w-3" /> {t('login.free_forever')}
               </div>
               <h1 className="text-4xl md:text-6xl font-black text-slate-900 leading-[1.1]">
-                Master Your Business <br /> 
-                <span className="text-primary italic">Financial Flow.</span>
+                {t('login.hero_title')}
               </h1>
               <p className="text-lg md:text-xl text-slate-600 max-w-xl mx-auto lg:mx-0">
-                The modern, mobile-optimized accounting tool for small businesses and freelancers. 
-                Keep your data safe in your own <span className="font-bold text-slate-900">Google Drive</span>.
+                {t('login.hero_subtitle')}
               </p>
               
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
@@ -115,20 +113,20 @@ export default function LoginView() {
                       d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 12-4.53z"
                     />
                   </svg>
-                  Get Started for Free
+                  {t('login.get_started')}
                 </Button>
-                <p className="text-sm text-slate-400 font-medium">No Credit Card Required</p>
+                <p className="text-sm text-slate-400 font-medium">{t('login.no_credit_card')}</p>
               </div>
 
               <div className="flex flex-wrap items-center justify-center lg:justify-start gap-6 pt-4 grayscale opacity-50">
                 <div className="flex items-center gap-2 font-bold text-slate-500">
-                  <ShieldCheck className="h-5 w-5" /> Secure
+                  <ShieldCheck className="h-5 w-5" /> {t('login.secure')}
                 </div>
                 <div className="flex items-center gap-2 font-bold text-slate-500">
-                  <Globe className="h-5 w-5" /> Bi-lingual
+                  <Globe className="h-5 w-5" /> {t('login.bilingual')}
                 </div>
                 <div className="flex items-center gap-2 font-bold text-slate-500">
-                  <Cloud className="h-5 w-5" /> Drive Sync
+                  <Cloud className="h-5 w-5" /> {t('login.drive_sync')}
                 </div>
               </div>
             </div>
@@ -167,7 +165,7 @@ export default function LoginView() {
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                    <Button variant="outline" className="bg-white/10 text-white border-white/20 hover:bg-white hover:text-slate-900" onClick={login}>
-                     See Live Demo <ArrowRight className="ms-2 h-4 w-4" />
+                     {t('login.see_demo')} <ArrowRight className="ms-2 h-4 w-4" />
                    </Button>
                 </div>
               </div>
@@ -178,8 +176,8 @@ export default function LoginView() {
         {/* Features Section */}
         <div className="max-w-7xl mx-auto px-6 py-20">
           <div className="text-center mb-16 space-y-4">
-            <h2 className="text-3xl md:text-4xl font-black text-slate-900">Powerful Features. Simple Workflow.</h2>
-            <p className="text-slate-500 max-w-2xl mx-auto">Everything you need to manage your business financials without the overhead of complex enterprise software.</p>
+            <h2 className="text-3xl md:text-4xl font-black text-slate-900">{t('login.features_title')}</h2>
+            <p className="text-slate-500 max-w-2xl mx-auto">{t('login.features_subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -212,14 +210,12 @@ export default function LoginView() {
                 <path fill="#EA4335" d="M12,1.33l7.5,13h-15L12,1.33z" transform="rotate(240,12,12) scale(0.6) translate(4,10)"/>
               </svg>
             </div>
-            <h2 className="text-3xl md:text-5xl font-black">Your Data, Your Drive.</h2>
+            <h2 className="text-3xl md:text-5xl font-black">{t('login.drive_title')}</h2>
             <p className="text-lg md:text-xl text-slate-400">
-              We don't store your sensitive financial data on our servers. 
-              FinFlow connects directly to your personal <span className="text-white font-bold underline decoration-primary decoration-4 underline-offset-4">Google Drive</span> storage.
-              Total privacy, absolute control, and free for life.
+              {t('login.drive_desc')}
             </p>
             <Button size="lg" className="h-14 px-10 text-lg font-bold bg-white text-slate-900 hover:bg-slate-100" onClick={login}>
-              Connect Now
+              {t('login.connect_now')}
             </Button>
           </div>
         </div>
@@ -232,15 +228,15 @@ export default function LoginView() {
                 <CreditCard className="h-4 w-4 text-primary-foreground" />
               </div>
               <span className="font-bold text-slate-900">FinFlow</span>
-              <span className="text-slate-400 text-sm ml-2">© 2026 Open Source Project</span>
+              <span className="text-slate-400 text-sm ml-2">{t('login.footer_rights')}</span>
             </div>
             <div className="flex gap-8 text-sm font-bold text-slate-500">
-              <a href="#" className="hover:text-primary">Privacy</a>
-              <a href="#" className="hover:text-primary">Terms</a>
-              <a href="#" className="hover:text-primary">Github</a>
+              <a href="#" className="hover:text-primary">{t('login.privacy')}</a>
+              <a href="#" className="hover:text-primary">{t('login.terms')}</a>
+              <a href="#" className="hover:text-primary">{t('login.github')}</a>
             </div>
             <div className="text-slate-400 text-xs text-center md:text-start">
-              Built with React 19, TypeScript, and Google Cloud Identity.
+              {t('login.built_with')}
             </div>
           </div>
         </footer>
