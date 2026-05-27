@@ -2,7 +2,7 @@
 
 FinFlow is a professional, mobile-optimized financial management application designed for freelancers and small businesses. It combines the power of a modern accounting suite with the total privacy of your own **Google Drive**.
 
-## 🛡️ Flagship Feature: Your Data, Your Drive
+## 🛡️ Your Data, Your Drive
 FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accounting software, we do not store your sensitive financial data, client lists, or receipts on our servers. 
 
 ### How it Works:
