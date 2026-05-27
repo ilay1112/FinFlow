@@ -277,7 +277,7 @@ export default function DashboardView() {
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', textAlign: isRtl ? 'right' : 'left', fontSize: '11px' }}
-                  formatter={(value: any) => formatCurrency(Number(value || 0))}
+                  formatter={(value: unknown) => formatCurrency(Number(value || 0))}
                 />
                 <Legend iconType="circle" verticalAlign="top" align="right" wrapperStyle={{ fontSize: '10px', paddingBottom: '20px' }} />
                 <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} name={t('invoices.paid')} barSize={window.innerWidth < 768 ? 15 : 30} />
@@ -313,7 +313,7 @@ export default function DashboardView() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                      <Tooltip formatter={(value: unknown) => formatCurrency(Number(value || 0))} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>

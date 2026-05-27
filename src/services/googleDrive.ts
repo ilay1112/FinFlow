@@ -1,6 +1,7 @@
 import type { Expense, Client, Invoice, BusinessSettings } from '../context/FinanceContext';
 
-const APP_DATA_FILENAME = 'business_app_data.json';
+const ROOT_FOLDER_NAME = 'FinFlow Data';
+const APP_DATA_FILENAME = 'app_data.json';
 const RECEIPTS_FOLDER_NAME = 'Business App Receipts';
 
 export interface AppState {
@@ -35,8 +36,8 @@ const DEFAULT_STATE: AppState = {
 /**
  * Searches for a file by name. Returns the file ID or null.
  */
-async function findFileId(token: string, name: string, isFolder: boolean = false): Promise<string | null> {
-  const q = `name = '${name}' and trashed = false${isFolder ? " and mimeType = 'application/vnd.google-apps.folder'" : ""}`;
+async function findFileId(token: string, name: string, isFolder: boolean = false, parentId: string = 'root'): Promise<string | null> {
+  const q = `name = '${name}' and trashed = false and '${parentId}' in parents${isFolder ? " and mimeType = 'application/vnd.google-apps.folder'" : ""}`;
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -105,13 +106,20 @@ async function createFile(token: string, name: string, content: AppState | null 
 }
 
 /**
- * Scans user's Drive for business_app_data.json. Returns fileId.
- * Creates it if it doesn't exist.
+ * Scans user's Drive for FinFlow Data folder and app_data.json. Returns fileId.
+ * Creates them if they don't exist.
  */
 export async function initAppState(token: string): Promise<string> {
-  let fileId = await findFileId(token, APP_DATA_FILENAME);
+  // 1. Find or create root folder
+  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
+  if (!rootId) {
+    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
+  }
+
+  // 2. Find or create app data file inside root folder
+  let fileId = await findFileId(token, APP_DATA_FILENAME, false, rootId);
   if (!fileId) {
-    fileId = await createFile(token, APP_DATA_FILENAME, DEFAULT_STATE);
+    fileId = await createFile(token, APP_DATA_FILENAME, DEFAULT_STATE, false, rootId);
   }
   return fileId;
 }
@@ -181,12 +189,19 @@ async function setPublicPermission(token: string, fileId: string): Promise<void>
 }
 
 /**
- * Creates "Business App Receipts" folder and uploads file.
+ * Creates "Business App Receipts" folder inside "FinFlow Data" and uploads file.
  */
 export async function uploadReceiptToDrive(token: string, file: File, metadata: { vendor: string; date: string }): Promise<string> {
-  let folderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true);
+  // 1. Find or create root folder
+  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
+  if (!rootId) {
+    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
+  }
+
+  // 2. Find or create receipts folder inside root folder
+  let folderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true, rootId);
   if (!folderId) {
-    folderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true);
+    folderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true, rootId);
     // Also make the folder "anyone with link" if desired, but let's stick to files for now
   }
 

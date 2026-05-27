@@ -19,19 +19,32 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('auth_user');
-    return saved ? JSON.parse(saved) : null;
-  });
-  const [accessToken, setAccessToken] = useState<string | null>(() => {
-    const token = localStorage.getItem('auth_token');
-    const expiry = localStorage.getItem('auth_expiry');
-    if (token && expiry && Date.now() < Number(expiry)) {
-      return token;
-    }
-    return null;
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load from LocalStorage on mount
+  useEffect(() => {
+    const loadAuth = () => {
+      const savedUser = localStorage.getItem('auth_user');
+      const savedToken = localStorage.getItem('auth_token');
+      const savedExpiry = localStorage.getItem('auth_expiry');
+
+      if (savedUser && savedToken && savedExpiry) {
+        if (Date.now() < Number(savedExpiry)) {
+          setUser(JSON.parse(savedUser));
+          setAccessToken(savedToken);
+        } else {
+          localStorage.removeItem('auth_user');
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_expiry');
+        }
+      }
+      setIsLoading(false);
+    };
+
+    requestAnimationFrame(loadAuth);
+  }, []);
 
   const fetchUserProfile = async (token: string) => {
     try {
@@ -54,9 +67,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = useGoogleLogin({
     onSuccess: (tokenResponse: TokenResponse) => {
+      const now = Date.now();
       setAccessToken(tokenResponse.access_token);
       // Google tokens usually last 1 hour (3600 seconds)
-      const expiry = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
+      const expiry = now + (tokenResponse.expires_in || 3600) * 1000;
       localStorage.setItem('auth_token', tokenResponse.access_token);
       localStorage.setItem('auth_expiry', expiry.toString());
       fetchUserProfile(tokenResponse.access_token);
