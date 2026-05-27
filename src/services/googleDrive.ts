@@ -141,12 +141,35 @@ export async function saveAppState(token: string, fileId: string, data: AppState
 }
 
 /**
+ * Sets the permission of a file to "anyone with the link" as a reader.
+ * This prevents "You need access" errors when the user is logged into multiple Google accounts.
+ */
+async function setPublicPermission(token: string, fileId: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      role: 'reader',
+      type: 'anyone',
+    }),
+  });
+  
+  if (!response.ok) {
+    console.warn('Failed to set public permission on file:', fileId);
+  }
+}
+
+/**
  * Creates "Business App Receipts" folder and uploads file.
  */
 export async function uploadReceiptToDrive(token: string, file: File, metadata: { vendor: string; date: string }): Promise<string> {
   let folderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true);
   if (!folderId) {
     folderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true);
+    // Also make the folder "anyone with link" if desired, but let's stick to files for now
   }
 
   const filename = `${metadata.date}_${metadata.vendor}_${file.name}`;
@@ -159,7 +182,7 @@ export async function uploadReceiptToDrive(token: string, file: File, metadata: 
   form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
   form.append('file', file);
 
-  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=webViewLink', {
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -167,5 +190,11 @@ export async function uploadReceiptToDrive(token: string, file: File, metadata: 
   
   if (!response.ok) throw new Error('Failed to upload receipt');
   const data: DriveFile = await response.json();
+  
+  // Explicitly set public permission to avoid account switching errors
+  if (data.id) {
+    await setPublicPermission(token, data.id);
+  }
+
   return data.webViewLink || '';
 }
