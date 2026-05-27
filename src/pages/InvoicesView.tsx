@@ -54,14 +54,17 @@ export default function InvoicesView() {
   const [pdfInvoice, setPdfInvoice] = useState<Invoice | null>(null);
   
   // Form State
-  const [formData, setFormData] = useState<InvoiceFormData>(() => ({
-    clientId: '',
-    date: new Date().toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    items: [{ id: '1', description: '', quantity: 1, unitPrice: 0 }] as InvoiceItem[],
-    taxRate: 0,
-    status: 'Sent' as Invoice['status']
-  }));
+  const [formData, setFormData] = useState<InvoiceFormData>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return {
+      clientId: '',
+      date: today,
+      dueDate: today,
+      items: [{ id: '1', description: '', quantity: 1, unitPrice: 0 }] as InvoiceItem[],
+      taxRate: 0,
+      status: 'Sent' as Invoice['status']
+    };
+  });
 
   const filteredInvoices = invoices.filter(inv => {
     const matchesSearch = inv.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -93,10 +96,11 @@ export default function InvoicesView() {
       });
     } else {
       setEditingInvoice(null);
+      const today = new Date().toISOString().split('T')[0];
       setFormData({
         clientId: '',
-        date: new Date().toISOString().split('T')[0],
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        date: today,
+        dueDate: today,
         items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: 0 }],
         taxRate: 0,
         status: 'Sent'
