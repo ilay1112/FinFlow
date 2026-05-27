@@ -77,7 +77,7 @@ interface FinanceContextType {
   deleteCategory: (category: string) => void;
   setTaxRate: (rate: number) => void;
   updateBusinessSettings: (settings: BusinessSettings) => void;
-  uploadReceipt: (file: File, expenseId: string) => Promise<void>;
+  uploadReceipt: (file: File, expenseId: string, metadata?: { vendor: string; date: string }) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -272,16 +272,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateBusinessSettings = (settings: BusinessSettings) => setBusinessSettings(settings);
 
-  const uploadReceipt = async (file: File, expenseId: string) => {
+  const uploadReceipt = async (file: File, expenseId: string, metadata?: { vendor: string; date: string }) => {
     if (!isAuthenticated || !accessToken) return;
     
     setIsSyncing(true);
     try {
-      const expense = expenses.find(e => e.id === expenseId);
-      const url = await googleDrive.uploadReceiptToDrive(accessToken, file, {
-        vendor: expense?.vendor || 'Unknown',
-        date: expense?.date || new Date().toISOString().split('T')[0]
-      });
+      // Use provided metadata or fall back to finding in state
+      let uploadMetadata = metadata;
+      if (!uploadMetadata) {
+        const expense = expenses.find(e => e.id === expenseId);
+        uploadMetadata = {
+          vendor: expense?.vendor || 'Unknown',
+          date: expense?.date || new Date().toISOString().split('T')[0]
+        };
+      }
+
+      const url = await googleDrive.uploadReceiptToDrive(accessToken, file, uploadMetadata);
       
       updateExpense(expenseId, { 
         receiptStatus: 'Uploaded', 

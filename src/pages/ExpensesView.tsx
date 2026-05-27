@@ -169,9 +169,11 @@ export default function ExpensesView() {
 
       if (selectedFile && expenseId) {
         console.log('Uploading receipt...');
-        // We don't await here to let the modal close immediately
-        // but FinanceContext will still track the 'isSyncing' state
-        uploadReceipt(selectedFile, expenseId);
+        // Pass metadata directly to avoid state sync race conditions
+        uploadReceipt(selectedFile, expenseId, {
+          vendor: data.vendor,
+          date: data.date
+        });
       }
 
       setSelectedFile(null);
