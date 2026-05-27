@@ -472,21 +472,53 @@ export default function ExpensesView() {
         title={`${t('expenses.receipt')}: ${viewingReceipt?.vendor}`}
       >
         <div className="space-y-4">
-          <div className="aspect-[3/4] w-full bg-slate-100 rounded-lg border overflow-hidden flex flex-col items-center justify-center text-center p-8">
-            <FileText className="h-20 w-20 text-indigo-500 mb-4 opacity-40" />
-            <h3 className="text-lg font-bold text-slate-900">{viewingReceipt?.receiptName || 'Receipt File'}</h3>
-            <p className="text-sm text-slate-500 mt-2 mb-6">
-              Google Drive prevents direct previews in some browsers for security. 
-              Click below to view the receipt safely in a new tab.
-            </p>
+          <div className="aspect-[3/4] w-full bg-slate-50 rounded-lg border overflow-hidden relative group">
             {viewingReceipt?.receiptUrl ? (
-              <Button asChild className="gap-2 font-bold px-8 shadow-md">
-                <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4" /> {t('expenses.view_receipt') || 'Open in Drive'}
-                </a>
-              </Button>
+              <>
+                {/* 
+                  We use the Google Docs Viewer with the 'srcid' parameter for maximum compatibility.
+                  The URL extraction logic finds the file ID from the webViewLink.
+                */}
+                {(() => {
+                  const fileId = viewingReceipt.receiptUrl.match(/\/d\/(.+?)\//)?.[1];
+                  if (fileId) {
+                    return (
+                      <iframe 
+                        src={`https://docs.google.com/viewer?srcid=${fileId}&pid=explorer&efh=false&a=v&chrome=false&embedded=true`}
+                        className="w-full h-full border-none shadow-inner"
+                        title={viewingReceipt.receiptName}
+                        allow="autoplay"
+                      />
+                    );
+                  }
+                  return (
+                    <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                      <FileText className="h-16 w-16 text-slate-300 mb-4" />
+                      <p className="text-sm text-slate-500">Preview not available for this link format.</p>
+                      <Button asChild variant="outline" size="sm" className="mt-4">
+                        <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
+                          Open Directly <ExternalLink className="ms-2 h-3 w-3" />
+                        </a>
+                      </Button>
+                    </div>
+                  );
+                })()}
+                
+                {/* Overlay Action Button (Visible on Hover for easier direct access) */}
+                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button asChild size="sm" variant="secondary" className="shadow-lg backdrop-blur-md bg-white/80">
+                    <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+              </>
             ) : (
-              <p className="text-xs italic text-slate-400">(Preview not available for mock data)</p>
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <FileText className="h-16 w-16 mb-4 opacity-20" />
+                <p className="text-sm font-medium">{viewingReceipt?.receiptName || 'receipt_sample.pdf'}</p>
+                <p className="text-xs mt-2 italic">(Preview not available for mock data)</p>
+              </div>
             )}
           </div>
           
