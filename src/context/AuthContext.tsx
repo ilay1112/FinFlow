@@ -67,14 +67,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = useGoogleLogin({
     onSuccess: (tokenResponse: TokenResponse) => {
-      const now = Date.now();
-      setAccessToken(tokenResponse.access_token);
-      // Google tokens usually last 1 hour (3600 seconds)
-      const expiry = now + (tokenResponse.expires_in || 3600) * 1000;
-      localStorage.setItem('auth_token', tokenResponse.access_token);
-      localStorage.setItem('auth_expiry', expiry.toString());
-      fetchUserProfile(tokenResponse.access_token);
-      setIsLoading(false);
+      // Move side effects inside the callback which is not called during render
+      const handleSuccess = () => {
+        const now = Date.now();
+        setAccessToken(tokenResponse.access_token);
+        // Google tokens usually last 1 hour (3600 seconds)
+        const expiry = now + (tokenResponse.expires_in || 3600) * 1000;
+        localStorage.setItem('auth_token', tokenResponse.access_token);
+        localStorage.setItem('auth_expiry', expiry.toString());
+        fetchUserProfile(tokenResponse.access_token);
+        setIsLoading(false);
+      };
+      handleSuccess();
     },
     onError: (error) => {
       console.error('Login Failed:', error);
