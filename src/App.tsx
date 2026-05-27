@@ -5,8 +5,8 @@ import { FinanceProvider } from './context/FinanceContext';
 import { AppLayout } from './layouts/AppLayout';
 import { AlertCircle } from 'lucide-react';
 
-// Google Client ID - Replace with your actual ID from Google Cloud Console
-const GOOGLE_CLIENT_ID = "254930265326-oataevudj1gi4f876td4sijt8ufhch0i.apps.googleusercontent.com";
+// Google Client ID from environment variables
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 import LoginPage from './pages/LoginView';
 import DashboardPage from './pages/DashboardView';
