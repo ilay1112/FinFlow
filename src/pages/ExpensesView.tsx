@@ -484,8 +484,8 @@ export default function ExpensesView() {
                   if (fileId) {
                     return (
                       <iframe 
-                        src={`https://docs.google.com/viewer?srcid=${fileId}&pid=explorer&efh=false&a=v&chrome=false&embedded=true`}
-                        className="w-full h-full border-none shadow-inner"
+                        src={`https://drive.google.com/file/d/${fileId}/preview`}
+                        className="w-full h-full border-none"
                         title={viewingReceipt.receiptName}
                         allow="autoplay"
                       />
