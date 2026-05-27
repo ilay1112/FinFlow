@@ -111,10 +111,11 @@ export default function ExpensesView() {
       });
     } else {
       setEditingExpense(null);
+      const defaultCategory = categories.length > 0 ? categories[0] : 'Other';
       setFormData({
         date: new Date().toISOString().split('T')[0],
         vendor: '',
-        category: categories.length > 0 ? categories[0] : 'Other',
+        category: defaultCategory,
         amount: '',
         isTaxDeductible: true,
         receiptStatus: 'Missing',
@@ -620,11 +621,11 @@ export default function ExpensesView() {
               </label>
             </div>
 
-            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-11 md:h-10 order-2 sm:order-1">
+            <div className="flex justify-end gap-3 pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="px-8 font-bold">
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" className="h-11 md:h-10 px-8 order-1 sm:order-2 font-bold">
+              <Button type="submit" className="px-8 font-bold">
                 {editingExpense ? t('common.save') : t('common.add')}
               </Button>
             </div>
