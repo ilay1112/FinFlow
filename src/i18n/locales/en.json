@@ -72,6 +72,8 @@
     "title": "Invoices",
     "subtitle": "Generate and track customer invoices.",
     "create_invoice": "Create Invoice",
+    "receipt_title": "Receipt",
+    "tax_invoice_title": "Tax Invoice",
     "invoice_id": "Invoice ID",
     "client": "Client",
     "dates": "Dates",

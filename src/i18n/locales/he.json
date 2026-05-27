@@ -73,6 +73,8 @@
     "title": "חשבוניות",
     "subtitle": "הפקה ומעקב אחר חשבוניות לקוחות.",
     "create_invoice": "יצירת חשבונית",
+    "receipt_title": "קבלה",
+    "tax_invoice_title": "חשבונית מס",
     "invoice_id": "מספר חשבונית",
     "client": "לקוח",
     "dates": "תאריכים",
