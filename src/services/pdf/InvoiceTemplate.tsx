@@ -40,7 +40,9 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
       {/* Header */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-slate-900 uppercase tracking-tight">
-          {business.type === 'EsekPatur' ? t('invoices.receipt_title') : t('invoices.tax_invoice_title')}
+          {String(business.type).trim() === 'EsekPatur' 
+            ? t('invoices.receipt_title') 
+            : t('invoices.tax_invoice_title')}
         </h1>
       </div>
 
