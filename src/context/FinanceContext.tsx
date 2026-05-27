@@ -144,7 +144,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setCategories(driveData.categories || DEFAULT_CATEGORIES);
           setClients(driveData.clients || []);
           setInvoices(driveData.invoices || []);
-          setTaxRate(driveData.taxRate || 20);
+          setTaxRate(driveData.taxRate ?? 20);
           setBusinessSettings(driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS);
           
           isInitialLoad.current = false;
