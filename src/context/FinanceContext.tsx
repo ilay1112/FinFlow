@@ -148,9 +148,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setBusinessSettings(driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS);
           
           isInitialLoad.current = false;
-        } catch (error: any) {
-          console.error('Drive Sync Error:', error);
-          setSyncError(`Drive Sync Error: ${error.message || 'Unknown error'}`);
+        } catch (error) {
+          const err = error as Error;
+          console.error('Drive Sync Error:', err);
+          setSyncError(`Drive Sync Error: ${err.message || 'Unknown error'}`);
         } finally {
           setIsLoading(false);
         }

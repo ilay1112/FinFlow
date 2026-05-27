@@ -114,7 +114,7 @@ export default function ExpensesView() {
       setFormData({
         date: new Date().toISOString().split('T')[0],
         vendor: '',
-        category: categories.length > 0 ? categories[0] : '',
+        category: categories.length > 0 ? categories[0] : 'Other',
         amount: '',
         isTaxDeductible: true,
         receiptStatus: 'Missing',
@@ -139,25 +139,39 @@ export default function ExpensesView() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Submitting expense:', formData);
+
+    const amount = parseFloat(formData.amount);
+    if (isNaN(amount)) {
+      console.error('Invalid amount');
+      return;
+    }
+
     const data = {
       ...formData,
-      amount: parseFloat(formData.amount),
+      amount,
     };
 
     let expenseId = editingExpense?.id;
-    if (editingExpense) {
-      updateExpense(editingExpense.id, data);
-    } else {
-      expenseId = uuidv4();
-      addExpense({ ...data, id: expenseId });
-    }
+    try {
+      if (editingExpense) {
+        updateExpense(editingExpense.id, data);
+      } else {
+        expenseId = uuidv4();
+        addExpense({ ...data, id: expenseId });
+      }
 
-    if (selectedFile && expenseId) {
-      await uploadReceipt(selectedFile, expenseId);
-    }
+      if (selectedFile && expenseId) {
+        console.log('Uploading receipt...');
+        await uploadReceipt(selectedFile, expenseId);
+      }
 
-    setIsModalOpen(false);
-    setSelectedFile(null);
+      setIsModalOpen(false);
+      setSelectedFile(null);
+      console.log('Expense saved successfully');
+    } catch (error) {
+      console.error('Error saving expense:', error);
+    }
   };
 
   const exportToCSV = () => {
