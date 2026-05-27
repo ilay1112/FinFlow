@@ -108,32 +108,50 @@ export function AppLayout() {
             </div>
 
             {isAuthenticated && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-md border shadow-sm text-[10px] font-semibold uppercase tracking-wider">
+              <div className="space-y-3">
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold uppercase tracking-wider transition-all",
+                  isSyncing ? "bg-indigo-50 border-indigo-200" : 
+                  syncError ? "bg-red-50 border-red-200" : 
+                  "bg-white border-slate-200"
+                )}>
                   {isSyncing ? (
-                    <RefreshCw className="h-3 w-3 text-indigo-500 animate-spin" />
+                    <RefreshCw className="h-4 w-4 text-indigo-500 animate-spin" />
                   ) : syncError ? (
-                    <CloudOff className="h-3 w-3 text-red-500" />
+                    <CloudOff className="h-4 w-4 text-red-500" />
                   ) : (
-                    <Cloud className="h-3 w-3 text-green-500" />
+                    <Cloud className="h-4 w-4 text-green-500" />
                   )}
                   <span className={cn(
                     "flex-1 truncate",
-                    syncError ? "text-red-600" : "text-slate-500"
+                    isSyncing ? "text-indigo-700" :
+                    syncError ? "text-red-700" : "text-slate-700"
                   )}>
                     {isSyncing ? 'Syncing...' : syncError ? 'Offline' : 'Drive Synced'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-3 px-2">
-                  <img src={user?.picture} alt={user?.name} className="h-8 w-8 rounded-full border shadow-sm" />
+                  <NavLink 
+                    to="/profile" 
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="shrink-0 hover:ring-2 hover:ring-primary/20 rounded-full transition-all active:scale-95"
+                  >
+                    <img src={user?.picture} alt={user?.name} className="h-10 w-10 rounded-full border-2 border-white shadow-md" />
+                  </NavLink>
                   <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium text-slate-900 truncate">{user?.name}</p>
+                    <NavLink 
+                      to="/profile" 
+                      onClick={() => setIsSidebarOpen(false)}
+                      className="text-sm font-bold text-slate-900 truncate block hover:text-primary transition-colors"
+                    >
+                      {user?.name}
+                    </NavLink>
                     <button 
                       onClick={logout}
-                      className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors"
+                      className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors font-medium mt-0.5"
                     >
-                      <LogOut className="h-2.5 w-2.5" /> Sign Out
+                      <LogOut className="h-3 w-3" /> Sign Out
                     </button>
                   </div>
                 </div>
