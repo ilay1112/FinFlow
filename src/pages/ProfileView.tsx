@@ -98,16 +98,17 @@ export default function ProfileView() {
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('profile.business_type')}</label>
               <select 
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 opacity-50 cursor-not-allowed"
                 value={formData.type}
                 onChange={(e) => setFormData({...formData, type: e.target.value as BusinessType})}
+                disabled
               >
                 <option value="EsekPatur">{t('profile.type_patur')}</option>
-                <option value="EsekMorshe">{t('profile.type_morshe')}</option>
-                <option value="Company">{t('profile.type_company')}</option>
+                <option value="EsekMorshe" disabled>{t('profile.type_morshe')}</option>
+                <option value="Company" disabled>{t('profile.type_company')}</option>
               </select>
               <p className="text-xs text-slate-400 mt-1">
-                {t('profile.type_help')}
+                {t('profile.type_help')} (Currently limited to Esek Patur)
               </p>
             </div>
 
