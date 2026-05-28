@@ -3,10 +3,11 @@ import { Calculator, Info, CheckCircle, AlertCircle } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { calculateProgressiveTax } from '../utils/utils';
 
 export default function TaxesView() {
   const { t, i18n } = useTranslation();
-  const { expenses, invoices, taxRate, setTaxRate } = useFinance();
+  const { expenses, invoices } = useFinance();
 
   const totalRevenue = invoices
     .filter(i => i.status === 'Paid')
@@ -19,7 +20,7 @@ export default function TaxesView() {
   
   const netProfit = totalRevenue - totalExpenses;
   const taxableIncome = totalRevenue - deductibleExpenses;
-  const estimatedTax = Math.max(0, taxableIncome * (taxRate / 100));
+  const estimatedTax = calculateProgressiveTax(taxableIncome);
 
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
@@ -109,22 +110,11 @@ export default function TaxesView() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
-                <div className="flex justify-between">
-                  <label className="text-sm font-medium">{t('invoices.tax_rate')}</label>
-                  <span className="text-sm font-bold text-primary">{taxRate}%</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="50" 
-                  value={taxRate} 
-                  onChange={(e) => setTaxRate(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
-                  <span>0%</span>
-                  <span>25%</span>
-                  <span>50%</span>
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                  <p className="text-sm font-bold text-slate-700">{t('dashboard.progressive_tax')}</p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    {t('dashboard.progressive_tax_desc')}
+                  </p>
                 </div>
               </div>
 
