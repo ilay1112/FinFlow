@@ -42,6 +42,8 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { cn } from '../utils/utils';
 
+import { calculateProgressiveTax } from '../utils/utils';
+
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'];
 
 type TimeRange = 'CurrentMonth' | 'CurrentYear';
@@ -75,7 +77,7 @@ const TrendBadge = ({ change, reverse = false, timeRange, isRtl, t }: TrendBadge
 export default function DashboardView() {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'he';
-  const { expenses, invoices, taxRate } = useFinance();
+  const { expenses, invoices } = useFinance();
   const [timeRange, setTimeRange] = useState<TimeRange>('CurrentMonth');
 
   // Calculate Date Intervals based on selection
@@ -115,13 +117,14 @@ export default function DashboardView() {
 
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
   const prevTotalExpenses = prevExpenses.reduce((sum, e) => sum + e.amount, 0);
-  
+
   const netProfit = currentRevenue - totalExpenses;
   const prevNetProfit = prevRevenue - prevTotalExpenses;
-  
-  const estimatedTax = Math.max(0, netProfit * (taxRate / 100));
+
+  const estimatedTax = calculateProgressiveTax(netProfit);
 
   const calculateChange = (current: number, previous: number) => {
+
     if (previous === 0) return current > 0 ? 100 : 0;
     return ((current - previous) / previous) * 100;
   };
@@ -249,7 +252,7 @@ export default function DashboardView() {
           <CardContent>
             <div className="text-xl md:text-2xl font-black text-slate-900">{formatCurrency(estimatedTax)}</div>
             <Badge variant="outline" className="mt-2 font-mono text-[9px] md:text-[10px] bg-indigo-50/50 border-indigo-100 text-indigo-700">
-              {t('dashboard.flat_rate', { rate: taxRate })}
+              {t('dashboard.progressive_tax')}
             </Badge>
           </CardContent>
         </Card>

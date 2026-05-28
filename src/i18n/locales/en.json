@@ -66,6 +66,8 @@
     "vs_last_year": "vs last year",
     "no_change": "No change",
     "flat_rate": "{{rate}}% flat rate",
+    "progressive_tax": "Progressive Tax Applied",
+    "progressive_tax_desc": "Tax liability is calculated based on the official 2026 progressive income tax brackets.",
     "no_data": "No data for this period."
   },
   "expenses": {
