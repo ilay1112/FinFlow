@@ -45,7 +45,7 @@ export default function TaxesView() {
                   <p className="text-primary-foreground/80 text-sm font-medium uppercase tracking-wider">{t('dashboard.tax_liability')}</p>
                   <h2 className="text-5xl font-bold mt-2">{formatCurrency(estimatedTax)}</h2>
                   <p className="text-primary-foreground/60 text-xs mt-4 flex items-center gap-1">
-                    <Info className="h-3 w-3" /> {t('dashboard.flat_rate', { rate: taxRate })}
+                    <Info className="h-3 w-3" /> {t('dashboard.progressive_tax')}
                   </p>
                 </div>
                 <div className="bg-white/10 p-6 rounded-2xl backdrop-blur-md border border-white/20 w-full md:w-auto">
