@@ -13,9 +13,10 @@ i18n
       en: { translation: en },
       he: { translation: he }
     },
-    fallbackLng: 'en',
+    fallbackLng: 'he',
+    lng: 'he', // Force default to Hebrew unless overridden by localStorage
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['localStorage'], // Only rely on localStorage, ignore browser language to ensure Hebrew default
       caches: ['localStorage'],
     },
     interpolation: {
