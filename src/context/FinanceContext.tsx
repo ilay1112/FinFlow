@@ -20,7 +20,6 @@ export interface Expense {
   vendor: string;
   category: string;
   amount: number;
-  isTaxDeductible: boolean;
   receiptStatus: 'Uploaded' | 'Missing';
   receiptName?: string;
   receiptUrl?: string;

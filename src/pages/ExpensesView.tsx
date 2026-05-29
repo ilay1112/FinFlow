@@ -65,7 +65,6 @@ export default function ExpensesView() {
     vendor: '',
     category: '', 
     amount: '',
-    isTaxDeductible: true,
     receiptStatus: 'Missing' as 'Uploaded' | 'Missing',
     receiptName: '',
     receiptUrl: ''
@@ -106,7 +105,6 @@ export default function ExpensesView() {
         vendor: expense.vendor,
         category: expense.category,
         amount: expense.amount.toString(),
-        isTaxDeductible: expense.isTaxDeductible,
         receiptStatus: expense.receiptStatus,
         receiptName: expense.receiptName || '',
         receiptUrl: expense.receiptUrl || ''
@@ -119,7 +117,6 @@ export default function ExpensesView() {
         vendor: '',
         category: defaultCategory,
         amount: '',
-        isTaxDeductible: true,
         receiptStatus: 'Missing',
         receiptName: '',
         receiptUrl: ''
@@ -184,13 +181,12 @@ export default function ExpensesView() {
   };
 
   const exportToCSV = () => {
-    const headers = [t('common.date'), t('expenses.vendor'), t('expenses.category'), t('common.amount'), t('expenses.tax_deductible'), t('expenses.receipt')];
+    const headers = [t('common.date'), t('expenses.vendor'), t('expenses.category'), t('common.amount'), t('expenses.receipt')];
     const rows = filteredExpenses.map(e => [
       e.date,
       e.vendor,
       e.category,
       e.amount,
-      e.isTaxDeductible ? 'Yes' : 'No',
       e.receiptStatus
     ]);
 
@@ -275,7 +271,7 @@ export default function ExpensesView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
         <Card className="bg-white border-s-4 border-s-primary">
           <CardContent className="pt-4 md:pt-6">
             <p className="text-xs md:text-sm font-medium text-slate-500 uppercase tracking-wider">{t('dashboard.total_expenses')}</p>
@@ -283,18 +279,8 @@ export default function ExpensesView() {
             <p className="text-[10px] md:text-xs text-slate-400 mt-1">{t('common.total')}: {filteredExpenses.length}</p>
           </CardContent>
         </Card>
-        
-        <Card className="bg-white border-s-4 border-s-green-500">
-          <CardContent className="pt-4 md:pt-6">
-            <p className="text-xs md:text-sm font-medium text-slate-500 uppercase tracking-wider">{t('expenses.tax_deductible')}</p>
-            <p className="text-2xl md:text-3xl font-bold text-slate-900 mt-2">
-              {formatCurrency(filteredExpenses.filter(e => e.isTaxDeductible).reduce((sum, e) => sum + e.amount, 0))}
-            </p>
-            <p className="text-[10px] md:text-xs text-slate-400 mt-1">{t('expenses.tax_deductible')}</p>
-          </CardContent>
-        </Card>
 
-        <Card className="bg-white border-s-4 border-s-amber-500 sm:col-span-2 md:col-span-1">
+        <Card className="bg-white border-s-4 border-s-amber-500">
           <CardContent className="pt-4 md:pt-6">
             <p className="text-xs md:text-sm font-medium text-slate-500 uppercase tracking-wider">{t('expenses.missing_receipts')}</p>
             <p className="text-2xl md:text-3xl font-bold text-slate-900 mt-2">
@@ -649,19 +635,6 @@ export default function ExpensesView() {
                   <p className="text-xs text-slate-400 mt-1">PDF, PNG, JPG (Max 5MB)</p>
                 </>
               )}
-            </div>
-
-            <div className="flex items-center gap-2 py-2">
-              <input 
-                type="checkbox" 
-                id="deductible" 
-                checked={formData.isTaxDeductible}
-                onChange={(e) => setFormData({...formData, isTaxDeductible: e.target.checked})}
-                className="h-5 w-5 md:h-4 md:w-4 rounded border-slate-300 text-primary focus:ring-primary"
-              />
-              <label htmlFor="deductible" className="text-sm font-medium text-slate-700 select-none">
-                {t('expenses.tax_deductible')}
-              </label>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">

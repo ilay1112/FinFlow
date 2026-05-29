@@ -14,9 +14,9 @@ export default function TaxesView() {
     .reduce((sum, i) => sum + i.total, 0);
   
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const deductibleExpenses = expenses
-    .filter(e => e.isTaxDeductible)
-    .reduce((sum, e) => sum + e.amount, 0);
+  
+  // Israeli Esek Zair Normative Deduction (30% of revenue)
+  const deductibleExpenses = totalRevenue * 0.30;
   
   const netProfit = totalRevenue - totalExpenses;
   const taxableIncome = totalRevenue - deductibleExpenses;
@@ -85,18 +85,13 @@ export default function TaxesView() {
                   <span className="text-xl font-bold text-green-900">{formatCurrency(deductibleExpenses)}</span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {expenses.filter(e => e.isTaxDeductible).slice(0, 4).map(expense => (
-                    <div key={expense.id} className="p-3 border rounded-lg flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-medium">{expense.vendor}</p>
-                        <p className="text-xs text-slate-500">{expense.category}</p>
-                      </div>
-                      <span className="text-sm font-bold">{formatCurrency(expense.amount)}</span>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-lg">
+                    <p className="text-sm font-medium text-slate-700 leading-relaxed">
+                      {t('taxes.normative_description')}
+                    </p>
+                  </div>
                 </div>
-                <Button variant="ghost" className="w-full text-slate-500 text-xs">{t('taxes.view_all_deductible')}</Button>
               </div>
             </CardContent>
           </Card>
