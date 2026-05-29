@@ -38,7 +38,7 @@ export function AppLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-slate-50 flex pb-[env(safe-area-inset-bottom,0px)]" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Sync Status Overlay / Loading */}
       {isLoading && (
         <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center backdrop-blur-sm">
@@ -59,7 +59,7 @@ export function AppLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 z-50 w-64 bg-white border-e transform transition-transform duration-200 md:relative md:translate-x-0",
+        "fixed inset-y-0 z-50 w-64 bg-white border-e transform transition-transform duration-200 md:relative md:translate-x-0 pt-[env(safe-area-inset-top,0px)]",
         isRtl ? "right-0" : "left-0",
         isSidebarOpen 
           ? "translate-x-0" 
@@ -163,7 +163,7 @@ export function AppLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shrink-0">
+        <header className="h-[calc(4rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-4">
             <Button 
               variant="ghost" 

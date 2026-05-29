@@ -113,19 +113,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Initial Load from LocalStorage (Fallback)
   useEffect(() => {
     const loadLocalData = () => {
-      const savedExpenses = localStorage.getItem('finance_expenses');
-      const savedCategories = localStorage.getItem('finance_categories');
-      const savedClients = localStorage.getItem('finance_clients');
-      const savedInvoices = localStorage.getItem('finance_invoices');
-      const savedTaxRate = localStorage.getItem('finance_tax_rate');
-      const savedSettings = localStorage.getItem('finance_business_settings');
+      try {
+        const savedExpenses = localStorage.getItem('finance_expenses');
+        const savedCategories = localStorage.getItem('finance_categories');
+        const savedClients = localStorage.getItem('finance_clients');
+        const savedInvoices = localStorage.getItem('finance_invoices');
+        const savedTaxRate = localStorage.getItem('finance_tax_rate');
+        const savedSettings = localStorage.getItem('finance_business_settings');
 
-      if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
-      if (savedCategories) setCategories(JSON.parse(savedCategories));
-      if (savedClients) setClients(JSON.parse(savedClients));
-      if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-      if (savedTaxRate) setTaxRate(Number(savedTaxRate));
-      if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
+        if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
+        if (savedCategories) setCategories(JSON.parse(savedCategories));
+        if (savedClients) setClients(JSON.parse(savedClients));
+        if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
+        if (savedTaxRate) setTaxRate(Number(savedTaxRate));
+        if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
+      } catch (error) {
+        console.error('Failed to load finance data from localStorage:', error);
+      }
     };
 
     requestAnimationFrame(loadLocalData);
@@ -165,12 +169,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Persistent LocalStorage and Auto-Save to Drive
   useEffect(() => {
     // Always save to localStorage as backup
-    localStorage.setItem('finance_expenses', JSON.stringify(expenses));
-    localStorage.setItem('finance_categories', JSON.stringify(categories));
-    localStorage.setItem('finance_clients', JSON.stringify(clients));
-    localStorage.setItem('finance_invoices', JSON.stringify(invoices));
-    localStorage.setItem('finance_tax_rate', taxRate.toString());
-    localStorage.setItem('finance_business_settings', JSON.stringify(businessSettings));
+    try {
+      localStorage.setItem('finance_expenses', JSON.stringify(expenses));
+      localStorage.setItem('finance_categories', JSON.stringify(categories));
+      localStorage.setItem('finance_clients', JSON.stringify(clients));
+      localStorage.setItem('finance_invoices', JSON.stringify(invoices));
+      localStorage.setItem('finance_tax_rate', taxRate.toString());
+      localStorage.setItem('finance_business_settings', JSON.stringify(businessSettings));
+    } catch (storageError) {
+      console.warn('Could not save finance data to localStorage', storageError);
+    }
 
     // Save to Drive if authenticated and not during initial fetch
     if (isAuthenticated && accessToken && driveFileId.current && !isInitialLoad.current) {
