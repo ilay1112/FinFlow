@@ -26,19 +26,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Load from LocalStorage on mount
   useEffect(() => {
     const loadAuth = () => {
-      const savedUser = localStorage.getItem('auth_user');
-      const savedToken = localStorage.getItem('auth_token');
-      const savedExpiry = localStorage.getItem('auth_expiry');
+      try {
+        const savedUser = localStorage.getItem('auth_user');
+        const savedToken = localStorage.getItem('auth_token');
+        const savedExpiry = localStorage.getItem('auth_expiry');
 
-      if (savedUser && savedToken && savedExpiry) {
-        if (Date.now() < Number(savedExpiry)) {
-          setUser(JSON.parse(savedUser));
-          setAccessToken(savedToken);
-        } else {
-          localStorage.removeItem('auth_user');
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_expiry');
+        if (savedUser && savedToken && savedExpiry) {
+          if (Date.now() < Number(savedExpiry)) {
+            setUser(JSON.parse(savedUser));
+            setAccessToken(savedToken);
+          } else {
+            localStorage.removeItem('auth_user');
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_expiry');
+          }
         }
+      } catch (error) {
+        console.error('Failed to load auth from localStorage:', error);
       }
       setIsLoading(false);
     };
@@ -58,7 +62,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         picture: data.picture,
       };
       setUser(profile);
-      localStorage.setItem('auth_user', JSON.stringify(profile));
+      try {
+        localStorage.setItem('auth_user', JSON.stringify(profile));
+      } catch (storageError) {
+        console.warn('Could not save user profile to localStorage', storageError);
+      }
     } catch (error) {
       console.error('Failed to fetch user profile:', error);
       logout();
@@ -73,8 +81,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAccessToken(tokenResponse.access_token);
         // Google tokens usually last 1 hour (3600 seconds)
         const expiry = now + (tokenResponse.expires_in || 3600) * 1000;
-        localStorage.setItem('auth_token', tokenResponse.access_token);
-        localStorage.setItem('auth_expiry', expiry.toString());
+        try {
+          localStorage.setItem('auth_token', tokenResponse.access_token);
+          localStorage.setItem('auth_expiry', expiry.toString());
+        } catch (storageError) {
+          console.warn('Could not save auth token to localStorage', storageError);
+        }
         fetchUserProfile(tokenResponse.access_token);
         setIsLoading(false);
       };
@@ -97,9 +109,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     googleLogout();
     setUser(null);
     setAccessToken(null);
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_expiry');
+    try {
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_expiry');
+    } catch (storageError) {
+      console.warn('Could not remove auth data from localStorage', storageError);
+    }
   };
 
   return (
