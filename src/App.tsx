@@ -1,7 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { FinanceProvider } from './context/FinanceContext';
+import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { AppLayout } from './layouts/AppLayout';
 import { AlertCircle } from 'lucide-react';
 
@@ -28,10 +28,19 @@ const Loading = () => (
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isInitialized, businessSettings } = useFinance();
+  const location = useLocation();
 
-  if (isLoading) return <Loading />;
+  if (authLoading) return <Loading />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  if (!isInitialized) return <Loading />;
+
+  // Enforce onboarding for first-time users
+  if (!businessSettings.name && location.pathname !== '/profile') {
+    return <Navigate to="/profile" replace />;
+  }
 
   return <>{children}</>;
 };
