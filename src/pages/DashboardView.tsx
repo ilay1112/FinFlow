@@ -121,7 +121,9 @@ export default function DashboardView() {
   const netProfit = currentRevenue - totalExpenses;
   const prevNetProfit = prevRevenue - prevTotalExpenses;
 
-  const estimatedTax = calculateProgressiveTax(netProfit);
+  // Esek Zair Normative Deduction (30% of revenue)
+  const taxableIncome = currentRevenue - (currentRevenue * 0.30);
+  const estimatedTax = calculateProgressiveTax(taxableIncome);
 
   const calculateChange = (current: number, previous: number) => {
 
