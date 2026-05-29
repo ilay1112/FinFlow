@@ -62,6 +62,7 @@ interface FinanceContextType {
   businessSettings: BusinessSettings;
   isLoading: boolean;
   isSyncing: boolean;
+  isInitialized: boolean;
   syncError: string | null;
   addExpense: (expense: Omit<Expense, 'id'>) => void;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
@@ -103,6 +104,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   
   const driveFileId = useRef<string | null>(null);
@@ -153,6 +155,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setSyncError(`Drive Sync Error: ${err.message || 'Unknown error'}`);
         } finally {
           setIsLoading(false);
+          setIsInitialized(true);
         }
       };
       syncFromDrive();
@@ -304,7 +307,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   return (
     <FinanceContext.Provider value={{ 
       expenses, clients, invoices, categories, taxRate, businessSettings,
-      isLoading, isSyncing, syncError,
+      isLoading, isSyncing, isInitialized, syncError,
       addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient, 
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
       setTaxRate: setTaxRateHandler, updateBusinessSettings, uploadReceipt
