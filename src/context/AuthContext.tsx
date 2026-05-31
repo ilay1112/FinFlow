@@ -59,7 +59,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = {
         name: data.name,
         email: data.email,
-        picture: data.picture,
+        // Ensure we get a high-quality image and handle potential Google image loading issues
+        picture: data.picture ? data.picture.replace(/=s\d+-c$/, '=s192-c') : `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name)}&background=random`,
       };
       setUser(profile);
       try {

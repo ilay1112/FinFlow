@@ -137,7 +137,12 @@ export function AppLayout() {
                     onClick={() => setIsSidebarOpen(false)}
                     className="shrink-0 hover:ring-2 hover:ring-primary/20 rounded-full transition-all active:scale-95"
                   >
-                    <img src={user?.picture} alt={user?.name} className="h-10 w-10 rounded-full border-2 border-white shadow-md" />
+                    <img
+                      src={user?.picture}
+                      alt={user?.name}
+                      referrerPolicy="no-referrer"
+                      className="h-10 w-10 rounded-full border-2 border-white shadow-md"
+                    />
                   </NavLink>
                   <div className="flex-1 overflow-hidden">
                     <NavLink 
@@ -194,7 +199,12 @@ export function AppLayout() {
             )}
             {isAuthenticated && (
                <NavLink to="/profile" className="hidden md:block">
-                 <img src={user?.picture} alt={user?.name} className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all" />
+                 <img
+                   src={user?.picture}
+                   alt={user?.name}
+                   referrerPolicy="no-referrer"
+                   className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all"
+                 />
                </NavLink>
             )}
           </div>
