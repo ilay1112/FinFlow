@@ -10,8 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capgo/capacitor-social-login": "^8.3.22",
     "@radix-ui/react-slot": "^1.2.4",
-    "@react-oauth/google": "^0.13.5",
     "canvg": "^4.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
