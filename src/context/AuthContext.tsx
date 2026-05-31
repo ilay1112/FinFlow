@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useGoogleLogin, googleLogout, type TokenResponse } from '@react-oauth/google';
+import { authService } from '../services/auth';
 
 interface UserProfile {
   name: string;
@@ -25,7 +25,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Load from LocalStorage on mount
   useEffect(() => {
-    const loadAuth = () => {
+    const loadAuth = async () => {
       try {
         const savedUser = localStorage.getItem('auth_user');
         const savedToken = localStorage.getItem('auth_token');
@@ -33,8 +33,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (savedUser && savedToken && savedExpiry) {
           if (Date.now() < Number(savedExpiry)) {
-            setUser(JSON.parse(savedUser));
-            setAccessToken(savedToken);
+            // Check if the plugin still considers us logged in
+            const isPluginSessionValid = await authService.checkSession();
+            
+            if (isPluginSessionValid) {
+              setUser(JSON.parse(savedUser));
+              setAccessToken(savedToken);
+            } else {
+              // Session expired at the provider level
+              logout();
+            }
           } else {
             localStorage.removeItem('auth_user');
             localStorage.removeItem('auth_token');
@@ -47,8 +55,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     };
 
-    requestAnimationFrame(loadAuth);
+    loadAuth();
   }, []);
+
+  const handleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const result = await authService.loginWithGoogle();
+      
+      if (result.accessToken) {
+        setAccessToken(result.accessToken);
+        
+        if (result.profile) {
+          setUser(result.profile);
+          try {
+            localStorage.setItem('auth_user', JSON.stringify(result.profile));
+          } catch (e) {
+            console.warn('LocalStorage save failed', e);
+          }
+        } else {
+          // Fallback to fetching profile if not provided by plugin
+          await fetchUserProfile(result.accessToken);
+        }
+
+        const now = Date.now();
+        // Assume 1 hour expiry if not provided
+        const expiry = now + 3600 * 1000;
+        
+        try {
+          localStorage.setItem('auth_token', result.accessToken);
+          localStorage.setItem('auth_expiry', expiry.toString());
+        } catch (e) {
+          console.warn('LocalStorage save failed', e);
+        }
+      }
+    } catch (error) {
+      console.error('Login Failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const fetchUserProfile = async (token: string) => {
     try {
@@ -59,8 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = {
         name: data.name,
         email: data.email,
-        // Ensure we get a high-quality image and handle potential Google image loading issues
-        picture: data.picture ? data.picture.replace(/=s\d+-c$/, '=s192-c') : `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name)}&background=random`,
+        picture: data.picture,
       };
       setUser(profile);
       try {
@@ -74,40 +119,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = useGoogleLogin({
-    onSuccess: (tokenResponse: TokenResponse) => {
-      // Move side effects inside the callback which is not called during render
-      const handleSuccess = () => {
-        const now = Date.now();
-        setAccessToken(tokenResponse.access_token);
-        // Google tokens usually last 1 hour (3600 seconds)
-        const expiry = now + (tokenResponse.expires_in || 3600) * 1000;
-        try {
-          localStorage.setItem('auth_token', tokenResponse.access_token);
-          localStorage.setItem('auth_expiry', expiry.toString());
-        } catch (storageError) {
-          console.warn('Could not save auth token to localStorage', storageError);
-        }
-        fetchUserProfile(tokenResponse.access_token);
-        setIsLoading(false);
-      };
-      handleSuccess();
-    },
-    onError: (error) => {
-      console.error('Login Failed:', error);
-      setIsLoading(false);
-    },
-    scope: 'openid profile email https://www.googleapis.com/auth/drive.file',
-    onNonOAuthError: () => setIsLoading(false),
-  });
-
-  const handleLogin = () => {
-    setIsLoading(true);
-    login();
-  };
-
-  const logout = () => {
-    googleLogout();
+  const logout = async () => {
+    try {
+      await authService.logout();
+    } catch (e) {
+      console.warn('Logout plugin call failed', e);
+    }
     setUser(null);
     setAccessToken(null);
     try {
