@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { AppLayout } from './layouts/AppLayout';
@@ -124,15 +123,13 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        <AuthProvider>
-          <FinanceProvider>
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
-          </FinanceProvider>
-        </AuthProvider>
-      </GoogleOAuthProvider>
+      <AuthProvider>
+        <FinanceProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </FinanceProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }
