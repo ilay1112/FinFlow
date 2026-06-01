@@ -17,6 +17,7 @@ FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accoun
 - **📝 Professional Invoicing**: High-fidelity PDF generation with perfect RTL (Hebrew) support and dynamic legal titles (**Receipt** vs **Tax Invoice**).
 - **🌍 Bi-lingual & Bi-directional**: Full support for English (LTR) and Hebrew (RTL) with persistent language selection.
 - **💾 Offline-First**: Uses `localStorage` for immediate responsiveness, with background synchronization to Google Drive.
+- **📱 Native Mobile Support**: Fully cross-platform with CapacitorJS integration.
 
 ## 🛠️ Tech Stack
 - **Framework**: React 19 (Vite)
@@ -25,6 +26,7 @@ FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accoun
 - **Icons**: Lucide React
 - **Charts**: Recharts
 - **Storage**: Google Drive REST API
+- **Mobile**: [CapacitorJS](https://capacitorjs.com/) & [Capgo Social Login](https://capgo.app/docs/plugins/social-login/)
 
 ## 🚀 Getting Started
 
@@ -40,6 +42,25 @@ FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accoun
    VITE_GOOGLE_CLIENT_ID=your_google_client_id_here
    ```
 4. Start the development server: `npm run dev`
+
+### 📱 Native Mobile Setup (Android & iOS)
+FinFlow uses [CapacitorJS](https://capacitorjs.com/) and the [@capgo/capacitor-social-login](https://capgo.app/docs/plugins/social-login/) plugin for native Google Authentication.
+
+#### 1. Setup Auth
+Follow the [Capgo Social Login Setup Documentation](https://capgo.app/docs/plugins/social-login/) to configure your Native Android and iOS projects in the Google Cloud Console.
+
+#### 2. Native Configuration
+- **Android**: Update `android/app/src/main/res/values/strings.xml` with your `server_client_id`.
+- **iOS**: Update `ios/App/App/Info.plist` with the required URL schemes.
+
+#### 3. Build & Sync
+```bash
+# Build the web application
+npm run build
+
+# Sync changes to native platforms
+npx cap sync
+```
 
 ## 📄 License
 This project is open-source. See the LICENSE file for details.
