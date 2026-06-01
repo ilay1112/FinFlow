@@ -12,15 +12,21 @@ import {
   Globe,
   Cloud,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Info,
+  Lock
 } from 'lucide-react';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { Navigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Modal } from '../components/ui/Modal';
 import { cn } from '../utils/utils';
 
 export default function LoginView() {
   const { t, i18n } = useTranslation();
   const { login, isAuthenticated, isLoading } = useAuth();
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const isRtl = i18n.language === 'he';
 
   if (isAuthenticated) {
@@ -231,9 +237,19 @@ export default function LoginView() {
               <span className="text-slate-400 text-sm ml-2">{t('login.footer_rights')}</span>
             </div>
             <div className="flex gap-8 text-sm font-bold text-slate-500">
-              <a href="#" className="hover:text-primary">{t('login.privacy')}</a>
-              <a href="#" className="hover:text-primary">{t('login.terms')}</a>
-              <a href="#" className="hover:text-primary">{t('login.github')}</a>
+              <button onClick={() => setShowPrivacy(true)} className="hover:text-primary transition-colors">{t('login.privacy')}</button>
+              <button onClick={() => setShowTerms(true)} className="hover:text-primary transition-colors">{t('login.terms')}</button>
+              <a 
+                href="https://github.com/ilay1112/FinFlow" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="hover:text-primary flex items-center gap-1.5 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.082.824-.26.824-.578 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                </svg>
+                {t('login.github')}
+              </a>
             </div>
             <div className="text-slate-400 text-xs text-center md:text-start">
               {t('login.built_with')}
@@ -241,6 +257,64 @@ export default function LoginView() {
           </div>
         </footer>
       </main>
+
+      {/* Privacy Policy Modal */}
+      <Modal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} title="Privacy Policy | מדיניות פרטיות">
+        <div className="space-y-6 text-sm">
+          <section className="space-y-4 text-start" dir="ltr">
+            <div className="flex items-center gap-2 text-indigo-600 font-bold">
+              <Lock className="h-4 w-4" />
+              <span>English</span>
+            </div>
+            <div className="space-y-3 text-slate-600 leading-relaxed">
+              <p><strong>Zero Data Storage:</strong> FinFlow is built on a private-first architecture. We do not store, process, or transmit your financial data, receipts, or personal information to our own servers. Everything stays in your browser and your personal Google Drive.</p>
+              <p><strong>Full Responsibility:</strong> Since we do not hold your data, you are solely responsible for the management, backup, and security of your files within your Google Drive account. We cannot recover lost data or deleted files.</p>
+            </div>
+          </section>
+
+          <hr className="border-slate-100" />
+
+          <section className="space-y-4 text-right" dir="rtl">
+            <div className="flex items-center justify-end gap-2 text-indigo-600 font-bold">
+              <span>עברית</span>
+              <Lock className="h-4 w-4" />
+            </div>
+            <div className="space-y-3 text-slate-600 leading-relaxed">
+              <p><strong>אפס אחסון נתונים:</strong> FinFlow נבנתה על ארכיטקטורה של פרטיות תחילה. אנחנו לא שומרים, מעבדים או מעבירים את הנתונים הפיננסיים, הקבלות או המידע האישי שלך לשרתים שלנו. הכל נשאר בדפדפן שלך וב-Google Drive האישי שלך.</p>
+              <p><strong>אחריות מלאה:</strong> מאחר שאנחנו לא מחזיקים בנתונים שלך, אתה האחראי הבלעדי לניהול, הגיבוי והאבטחה של הקבצים שלך בחשבון ה-Google Drive שלך. אין לנו אפשרות לשחזר נתונים שאבדו או קבצים שנמחקו.</p>
+            </div>
+          </section>
+        </div>
+      </Modal>
+
+      {/* Terms of Service Modal */}
+      <Modal isOpen={showTerms} onClose={() => setShowTerms(false)} title="Terms of Service | תנאי שימוש">
+        <div className="space-y-6 text-sm">
+          <section className="space-y-4 text-start" dir="ltr">
+            <div className="flex items-center gap-2 text-indigo-600 font-bold">
+              <Info className="h-4 w-4" />
+              <span>English</span>
+            </div>
+            <div className="space-y-3 text-slate-600 leading-relaxed">
+              <p><strong>Free to Use:</strong> FinFlow is an open-source freeware project. It is 100% free to use for personal and commercial business purposes without any subscription fees.</p>
+              <p><strong>No Liability:</strong> This software is provided "as is", without warranty of any kind. The developers shall not be liable for any claims, damages, financial losses, or other liability arising from the use of this application.</p>
+            </div>
+          </section>
+
+          <hr className="border-slate-100" />
+
+          <section className="space-y-4 text-right" dir="rtl">
+            <div className="flex items-center justify-end gap-2 text-indigo-600 font-bold">
+              <span>עברית</span>
+              <Info className="h-4 w-4" />
+            </div>
+            <div className="space-y-3 text-slate-600 leading-relaxed">
+              <p><strong>חופשי לשימוש:</strong> FinFlow הוא פרויקט קוד פתוח (freeware). הוא חופשי לשימוש ב-100% למטרות אישיות ועסקיות מסחריות ללא כל דמי מנוי.</p>
+              <p><strong>העדר אחריות:</strong> תוכנה זו מסופקת "כמות שהיא" (as is), ללא כל אחריות מכל סוג שהוא. המפתחים לא יהיו אחראים לכל תביעה, נזק, הפסד כספי או חבות אחרת הנובעת מהשימוש באפליקציה זו.</p>
+            </div>
+          </section>
+        </div>
+      </Modal>
     </div>
   );
 }
