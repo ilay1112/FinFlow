@@ -69,6 +69,8 @@ export const authService = {
             filterByAuthorizedAccounts: true,
           } : {
             // Web-specific options
+            // We remove autoSelectEnabled/filterByAuthorizedAccounts as they are Android-only
+            // and might cause issues with the web library.
             style: 'standard',
           }),
         },
@@ -108,13 +110,19 @@ export const authService = {
       ? result.accessToken.token 
       : result.accessToken;
 
+    const rawPicture = result.profile?.image || result.profile?.picture || result.profile?.imageUrl;
+    // Normalize Google picture URL for higher resolution and handle missing images
+    const normalizedPicture = rawPicture 
+      ? rawPicture.replace(/=s\d+-c$/, '=s192-c') 
+      : `https://ui-avatars.com/api/?name=${encodeURIComponent(result.profile?.name || 'User')}&background=random`;
+
     return {
       accessToken: token as string,
       idToken: result.idToken as string,
       profile: result.profile ? {
         name: result.profile.name || '',
         email: result.profile.email || '',
-        picture: result.profile.image || result.profile.picture || '',
+        picture: normalizedPicture,
       } : null
     };
   },

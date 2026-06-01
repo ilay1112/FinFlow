@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   Search, 
@@ -39,6 +40,8 @@ const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: { key: 
 export default function ExpensesView() {
   const { t, i18n } = useTranslation();
   const { expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, deleteCategory, uploadReceipt } = useFinance();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -46,7 +49,29 @@ export default function ExpensesView() {
   const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<Expense | null>(null);
+  const [isNewReceiptAction, setIsNewReceiptAction] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Handle URL actions (Quick Actions from Dashboard)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const action = params.get('action');
+    if (action === 'new' || action === 'upload') {
+      const isUpload = action === 'upload';
+      setIsNewReceiptAction(isUpload);
+      handleOpenModal();
+      
+      if (isUpload) {
+        // Increased delay to ensure modal and its refs are fully stable before click
+        setTimeout(() => {
+          fileInputRef.current?.click();
+        }, 500);
+      }
+
+      // Remove the parameter after opening
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search]);
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -100,6 +125,7 @@ export default function ExpensesView() {
   const handleOpenModal = (expense?: Expense) => {
     if (expense) {
       setEditingExpense(expense);
+      setIsNewReceiptAction(false);
       setFormData({
         date: expense.date,
         vendor: expense.vendor,
@@ -111,6 +137,10 @@ export default function ExpensesView() {
       });
     } else {
       setEditingExpense(null);
+      // isNewReceiptAction is handled by the useEffect for URL actions, 
+      // but if opened via the '+' button, it should be false.
+      if (!isNewReceiptAction) setIsNewReceiptAction(false); 
+      
       const defaultCategory = categories.length > 0 ? categories[0] : 'Other';
       setFormData({
         date: new Date().toISOString().split('T')[0],
@@ -549,7 +579,13 @@ export default function ExpensesView() {
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title={editingExpense ? t('expenses.edit_expense') : t('expenses.add_expense')}
+        title={
+          editingExpense 
+            ? t('expenses.edit_expense') 
+            : isNewReceiptAction 
+              ? t('dashboard.new_receipt') 
+              : t('expenses.add_expense')
+        }
       >
         <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
