@@ -64,10 +64,10 @@ interface FinanceContextType {
   isSyncing: boolean;
   isInitialized: boolean;
   syncError: string | null;
-  addExpense: (expense: Omit<Expense, 'id'>) => void;
+  addExpense: (expense: Omit<Expense, 'id'>) => Expense;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
-  addClient: (client: Omit<Client, 'id' | 'totalBilled'>) => void;
+  addClient: (client: Omit<Client, 'id' | 'totalBilled'>) => Client;
   updateClient: (id: string, updates: Partial<Client>) => void;
   deleteClient: (id: string) => void;
   addInvoice: (invoice: Omit<Invoice, 'id' | 'total'>) => void;
@@ -201,7 +201,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [expenses, categories, clients, invoices, taxRate, businessSettings, isAuthenticated, accessToken]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
-    setExpenses(prev => [{ ...expense, id: expense.id || uuidv4() }, ...prev]);
+    const newExpense = { ...expense, id: expense.id || uuidv4() };
+    setExpenses(prev => [newExpense, ...prev]);
+    return newExpense;
   };
 
   const updateExpense = (id: string, updates: Partial<Expense>) => {
@@ -225,7 +227,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addClient = (client: Omit<Client, 'id' | 'totalBilled'>) => {
-    setClients(prev => [...prev, { ...client, id: uuidv4(), totalBilled: 0 }]);
+    const newClient = { ...client, id: uuidv4(), totalBilled: 0 };
+    setClients(prev => [...prev, newClient]);
+    return newClient;
   };
 
   const updateClient = (id: string, updates: Partial<Client>) => {

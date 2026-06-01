@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { 
   BarChart, 
   Bar, 
@@ -22,7 +23,10 @@ import {
   Calculator,
   ArrowUpRight,
   ArrowDownRight,
-  Minus
+  Minus,
+  Plus,
+  FileText,
+  UserPlus
 } from 'lucide-react';
 import { 
   startOfMonth, 
@@ -76,6 +80,7 @@ const TrendBadge = ({ change, reverse = false, timeRange, isRtl, t }: TrendBadge
 
 export default function DashboardView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const isRtl = i18n.language === 'he';
   const { expenses, invoices } = useFinance();
   const [timeRange, setTimeRange] = useState<TimeRange>('CurrentMonth');
@@ -200,7 +205,41 @@ export default function DashboardView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <Button 
+          variant="outline" 
+          className="h-20 bg-white border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 group transition-all"
+          onClick={() => navigate('/invoices?action=new')}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <FileText className="h-5 w-5 text-slate-400 group-hover:text-primary transition-colors" />
+            <span className="text-xs font-bold text-slate-600 group-hover:text-primary">{t('dashboard.new_receipt') || 'New Receipt'}</span>
+          </div>
+        </Button>
+        <Button 
+          variant="outline" 
+          className="h-20 bg-white border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 group transition-all"
+          onClick={() => navigate('/expenses?action=new')}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <Plus className="h-5 w-5 text-slate-400 group-hover:text-primary transition-colors" />
+            <span className="text-xs font-bold text-slate-600 group-hover:text-primary">{t('dashboard.new_expense') || 'New Expense'}</span>
+          </div>
+        </Button>
+        <Button 
+          variant="outline" 
+          className="h-20 bg-white border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 group transition-all col-span-2 sm:col-span-1"
+          onClick={() => navigate('/clients?action=new')}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <UserPlus className="h-5 w-5 text-slate-400 group-hover:text-primary transition-colors" />
+            <span className="text-xs font-bold text-slate-600 group-hover:text-primary">{t('dashboard.new_client') || 'New Client'}</span>
+          </div>
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <Card 
           className="border-s-4 border-s-blue-500 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]"
           onClick={toggleRange}

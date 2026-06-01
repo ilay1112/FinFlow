@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   Send, 
@@ -13,7 +14,9 @@ import {
   DollarSign,
   AlertTriangle,
   FileDown,
-  Loader2
+  Loader2,
+  UserPlus,
+  ArrowRight
 } from 'lucide-react';
 import { useFinance, type Invoice, type InvoiceItem } from '../context/FinanceContext';
 import { generateInvoicePDF } from '../services/pdf/invoice-service';
@@ -39,15 +42,53 @@ interface InvoiceFormData {
 export default function InvoicesView() {
   const { t, i18n } = useTranslation();
   const { invoices, clients, addInvoice, updateInvoice, deleteInvoice, businessSettings } = useFinance();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Client Search State
+  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const isRtl = i18n.language === 'he';
+
+  // Handle URL actions (Quick Actions from Dashboard)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const action = params.get('action');
+    if (action === 'new') {
+      handleOpenModal();
+      // Remove the parameter after opening
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search]);
+
+  // Click outside listener for client dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtered clients for search
+  const filteredSearchClients = useMemo(() => {
+    if (!clientSearchTerm) return clients.slice(0, 5);
+    return clients.filter(c => 
+      c.name.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+      c.email.toLowerCase().includes(clientSearchTerm.toLowerCase())
+    ).slice(0, 5);
+  }, [clients, clientSearchTerm]);
 
   // PDF Generation State
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -86,6 +127,7 @@ export default function InvoicesView() {
   const handleOpenModal = (invoice?: Invoice) => {
     if (invoice) {
       setEditingInvoice(invoice);
+      setClientSearchTerm(invoice.clientName);
       setFormData({
         clientId: invoice.clientId,
         date: invoice.date,
@@ -96,6 +138,7 @@ export default function InvoicesView() {
       });
     } else {
       setEditingInvoice(null);
+      setClientSearchTerm('');
       const today = new Date().toISOString().split('T')[0];
       setFormData({
         clientId: '',
@@ -106,7 +149,8 @@ export default function InvoicesView() {
         status: 'Sent'
       });
     }
-    setIsModalOpen(true);
+    setIsModalOpen(false); // Close first to reset any scroll
+    setTimeout(() => setIsModalOpen(true), 10);
   };
 
   const handleOpenDeleteAlert = (id: string) => {
@@ -123,12 +167,28 @@ export default function InvoicesView() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const client = clients.find(c => c.id === formData.clientId);
-    if (!client) return;
+    
+    let currentClientId = formData.clientId;
+    let currentClientName = '';
+
+    // Check if we have a match in existing clients
+    const existingClient = clients.find(c => c.id === currentClientId || c.name === clientSearchTerm);
+    
+    if (existingClient) {
+      currentClientId = existingClient.id;
+      currentClientName = existingClient.name;
+    } else if (clientSearchTerm.trim()) {
+      // Use the free text name without creating a new client in the database
+      currentClientId = 'casual'; 
+      currentClientName = clientSearchTerm.trim();
+    } else {
+      // No client selected and no search term
+      return;
+    }
 
     const invoiceData = {
-      clientId: formData.clientId,
-      clientName: client.name,
+      clientId: currentClientId,
+      clientName: currentClientName,
       date: formData.date,
       dueDate: formData.dueDate,
       items: formData.items,
@@ -199,7 +259,7 @@ export default function InvoicesView() {
       </div>
 
       {/* Analytics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         <Card className="border-s-4 border-s-green-500">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
@@ -226,7 +286,7 @@ export default function InvoicesView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-s-4 border-s-red-500 sm:col-span-2 md:col-span-1">
+        <Card className="border-s-4 border-s-red-500 col-span-2 md:col-span-1">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -401,19 +461,79 @@ export default function InvoicesView() {
         <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-6 pb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2 relative" ref={dropdownRef}>
                 <label className="text-sm font-medium">{t('invoices.client')}</label>
-                <select 
-                  className="flex h-11 md:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  required
-                  value={formData.clientId}
-                  onChange={(e) => setFormData({...formData, clientId: e.target.value})}
-                >
-                  <option value="">{t('invoices.choose_client')}</option>
-                  {clients.map(client => (
-                    <option key={client.id} value={client.id}>{client.name}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input 
+                    placeholder={t('invoices.choose_client')}
+                    className="ps-9 h-11 md:h-10"
+                    value={clientSearchTerm}
+                    onChange={(e) => {
+                      setClientSearchTerm(e.target.value);
+                      setIsClientDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsClientDropdownOpen(true)}
+                    required
+                  />
+                </div>
+
+                {isClientDropdownOpen && (
+                  <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white rounded-lg border shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="max-h-60 overflow-y-auto">
+                      {filteredSearchClients.length > 0 ? (
+                        filteredSearchClients.map(client => (
+                          <button
+                            key={client.id}
+                            type="button"
+                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors border-b last:border-0"
+                            onClick={() => {
+                              setFormData({ ...formData, clientId: client.id });
+                              setClientSearchTerm(client.name);
+                              setIsClientDropdownOpen(false);
+                            }}
+                          >
+                            <div className="text-start">
+                              <p className="text-sm font-bold text-slate-900">{client.name}</p>
+                              <p className="text-[10px] text-slate-500">{client.email}</p>
+                            </div>
+                            <ArrowRight className="h-4 w-4 text-slate-300" />
+                          </button>
+                        ))
+                      ) : clientSearchTerm ? (
+                        <div className="p-4 text-center text-xs text-slate-500">
+                          {t('clients.no_clients_found') || 'No matching clients found.'}
+                        </div>
+                      ) : null}
+                    </div>
+                    
+                    <div className="bg-slate-50 p-2 space-y-1 border-t">
+                      {clientSearchTerm && !clients.some(c => c.name.toLowerCase() === clientSearchTerm.toLowerCase()) && (
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                          onClick={() => setIsClientDropdownOpen(false)}
+                        >
+                          <div className="bg-indigo-100 p-1 rounded">
+                            <Plus className="h-3 w-3" />
+                          </div>
+                          <span>{t('common.continue_with') || 'Continue with'} "{clientSearchTerm}"</span>
+                        </button>
+                      )}
+                      
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
+                        onClick={() => navigate(`/clients?action=new&name=${encodeURIComponent(clientSearchTerm)}`)}
+                      >
+                        <div className="bg-slate-200 p-1 rounded">
+                          <UserPlus className="h-3 w-3" />
+                        </div>
+                        <span>{t('clients.add_client')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('common.status')}</label>
@@ -444,9 +564,6 @@ export default function InvoicesView() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-medium">{t('invoices.line_items')}</label>
-                <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-9 md:h-8">
-                  <Plus className="h-4 w-4 me-1" /> {t('invoices.add_item')}
-                </Button>
               </div>
               
               <div className="hidden md:flex gap-2 mb-1 px-1">
@@ -515,6 +632,12 @@ export default function InvoicesView() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="flex justify-start">
+                <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-9 md:h-8 border-dashed">
+                  <Plus className="h-4 w-4 me-1" /> {t('invoices.add_item')}
+                </Button>
               </div>
             </div>
 

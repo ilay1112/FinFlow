@@ -142,7 +142,14 @@ export default function ProfileView() {
         {isAuthenticated && (
           <CardContent>
             <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-indigo-100 shadow-sm">
-              <img src={user?.picture} alt={user?.name} className="h-12 w-12 rounded-full border-2 border-indigo-200" />
+              <img 
+                src={user?.picture} 
+                alt={user?.name} 
+                className="h-12 w-12 rounded-full border-2 border-indigo-200" 
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
+                }}
+              />
               <div>
                 <p className="font-bold text-slate-900">{user?.name}</p>
                 <p className="text-sm text-slate-500">{user?.email}</p>

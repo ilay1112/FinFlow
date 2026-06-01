@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   Mail, 
@@ -24,6 +25,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 export default function ClientsView() {
   const { t, i18n } = useTranslation();
   const { clients, invoices, addClient, updateClient, deleteClient } = useFinance();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -31,6 +34,27 @@ export default function ClientsView() {
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [selectedClientForHistory, setSelectedClientForHistory] = useState<Client | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Handle URL actions (Quick Actions from Dashboard)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const action = params.get('action');
+    const nameParam = params.get('name');
+    
+    if (action === 'new') {
+      setEditingClient(null);
+      setFormData({ 
+        name: nameParam || '', 
+        email: '', 
+        phone: '', 
+        address: '' 
+      });
+      setIsModalOpen(true);
+      
+      // Remove the parameter after opening
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -115,7 +139,7 @@ export default function ClientsView() {
       </div>
 
       {/* Analytics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         <Card className="border-s-4 border-s-primary">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
@@ -142,7 +166,7 @@ export default function ClientsView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-s-4 border-s-indigo-500 sm:col-span-2 md:col-span-1">
+        <Card className="border-s-4 border-s-indigo-500 col-span-2 md:col-span-1">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
               <div>

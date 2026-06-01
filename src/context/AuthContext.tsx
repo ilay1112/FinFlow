@@ -37,7 +37,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const isPluginSessionValid = await authService.checkSession();
             
             if (isPluginSessionValid) {
-              setUser(JSON.parse(savedUser));
+              const parsedUser = JSON.parse(savedUser);
+              
+              // Apply normalization to legacy stored URLs
+              if (parsedUser.picture && parsedUser.picture.includes('googleusercontent.com')) {
+                parsedUser.picture = parsedUser.picture.replace(/=s\d+-c$/, '=s192-c');
+              } else if (!parsedUser.picture) {
+                parsedUser.picture = `https://ui-avatars.com/api/?name=${encodeURIComponent(parsedUser.name || 'User')}&background=random`;
+              }
+              
+              setUser(parsedUser);
               setAccessToken(savedToken);
             } else {
               // Session expired at the provider level
@@ -102,10 +111,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
+      
+      // Normalize Google picture URL for higher resolution and handle missing images
+      const normalizedPicture = data.picture 
+        ? data.picture.replace(/=s\d+-c$/, '=s192-c') 
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'User')}&background=random`;
+
       const profile = {
-        name: data.name,
-        email: data.email,
-        picture: data.picture,
+        name: data.name || '',
+        email: data.email || '',
+        picture: normalizedPicture,
       };
       setUser(profile);
       try {
