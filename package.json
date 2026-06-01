@@ -15,7 +15,6 @@
     "@capacitor/core": "^8.3.4",
     "@capgo/capacitor-social-login": "^8.3.22",
     "@radix-ui/react-slot": "^1.2.4",
-    "canvg": "^4.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.3.0",

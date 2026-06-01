@@ -47,6 +47,7 @@
     "amount": "סכום",
     "currency": "₪",
     "total": "סה״כ",
+    "continue_with": "המשך עם",
     "syncing": "מסנכרן מול Google Drive..."
     },
 
@@ -69,7 +70,10 @@
     "flat_rate": "{{rate}}% שיעור מס קבוע",
     "progressive_tax": "מדרגות מס הוחלו",
     "progressive_tax_desc": "חבות המס מחושבת על בסיס מדרגות מס ההכנסה הרשמיות לשנת 2026.",
-    "no_data": "אין נתונים לתקופה זו."
+    "no_data": "אין נתונים לתקופה זו.",
+    "new_receipt": "קבלה חדשה",
+    "new_expense": "הוצאה חדשה",
+    "new_client": "לקוח חדש"
   },
   "expenses": {
     "title": "הוצאות",
@@ -142,6 +146,7 @@
     "address_label": "כתובת פיזית",
     "address_placeholder": "כתובת מלאה למשלוח חשבוניות...",
     "no_invoices": "לא נמצאו חשבוניות ללקוח זה.",
+    "no_clients_found": "לא נמצאו לקוחות תואמים.",
     "delete_title": "מחיקת לקוח",
     "delete_description": "האם אתה בטוח שברצונך למחוק לקוח זה? פעולה זו לא תמחק חשבוניות קיימות, אך הלקוח יוסר מהרשימה שלך."
   },

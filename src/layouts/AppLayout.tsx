@@ -38,7 +38,7 @@ export function AppLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex pb-[env(safe-area-inset-bottom,0px)]" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div className="h-screen h-[100dvh] bg-slate-50 flex overflow-hidden pb-[env(safe-area-inset-bottom,0px)]" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Sync Status Overlay / Loading */}
       {isLoading && (
         <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center backdrop-blur-sm">
@@ -137,11 +137,13 @@ export function AppLayout() {
                     onClick={() => setIsSidebarOpen(false)}
                     className="shrink-0 hover:ring-2 hover:ring-primary/20 rounded-full transition-all active:scale-95"
                   >
-                    <img
-                      src={user?.picture}
-                      alt={user?.name}
-                      referrerPolicy="no-referrer"
+                    <img 
+                      src={user?.picture} 
+                      alt={user?.name} 
                       className="h-10 w-10 rounded-full border-2 border-white shadow-md"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
+                      }}
                     />
                   </NavLink>
                   <div className="flex-1 overflow-hidden">
@@ -199,11 +201,13 @@ export function AppLayout() {
             )}
             {isAuthenticated && (
                <NavLink to="/profile" className="hidden md:block">
-                 <img
-                   src={user?.picture}
-                   alt={user?.name}
-                   referrerPolicy="no-referrer"
-                   className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all"
+                 <img 
+                   src={user?.picture} 
+                   alt={user?.name} 
+                   className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all" 
+                   onError={(e) => {
+                     (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
+                   }}
                  />
                </NavLink>
             )}
