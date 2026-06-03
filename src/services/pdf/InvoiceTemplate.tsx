@@ -115,14 +115,18 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
       {/* Totals */}
       <div className="flex flex-col items-end gap-3">
         <div className="w-full max-w-xs space-y-3">
-          <div className="flex justify-between text-sm text-slate-500 font-medium">
-            <span>{t('invoices.subtotal')}</span>
-            <Ltr>{formatCurrency(subtotal)}</Ltr>
-          </div>
-          <div className="flex justify-between text-sm text-slate-500 font-medium">
-            <span>{t('invoices.tax')} (<Ltr>{invoice.taxRate}</Ltr>%)</span>
-            <Ltr>{formatCurrency(taxAmount)}</Ltr>
-          </div>
+          {business.type !== 'EsekPatur' && (
+            <>
+              <div className="flex justify-between text-sm text-slate-500 font-medium">
+                <span>{t('invoices.subtotal')}</span>
+                <Ltr>{formatCurrency(subtotal)}</Ltr>
+              </div>
+              <div className="flex justify-between text-sm text-slate-500 font-medium">
+                <span>{t('invoices.tax')} (<Ltr>{invoice.taxRate}</Ltr>%)</span>
+                <Ltr>{formatCurrency(taxAmount)}</Ltr>
+              </div>
+            </>
+          )}
           <div className="flex justify-between text-3xl font-black border-t-2 border-slate-900 pt-6 mt-2 text-slate-900">
             <span>{t('common.total')}</span>
             <Ltr>{formatCurrency(invoice.total)}</Ltr>

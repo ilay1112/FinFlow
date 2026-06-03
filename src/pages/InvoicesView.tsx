@@ -125,6 +125,7 @@ export default function InvoicesView() {
   const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + i.total, 0);
 
   const handleOpenModal = (invoice?: Invoice) => {
+    const isPatur = businessSettings.type === 'EsekPatur';
     if (invoice) {
       setEditingInvoice(invoice);
       setClientSearchTerm(invoice.clientName);
@@ -133,7 +134,7 @@ export default function InvoicesView() {
         date: invoice.date,
         dueDate: invoice.dueDate,
         items: [...invoice.items],
-        taxRate: invoice.taxRate,
+        taxRate: isPatur ? 0 : invoice.taxRate,
         status: invoice.status
       });
     } else {
@@ -145,7 +146,7 @@ export default function InvoicesView() {
         date: today,
         dueDate: today,
         items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: 0 }],
-        taxRate: 0,
+        taxRate: isPatur ? 0 : 18,
         status: 'Sent'
       });
     }
@@ -192,7 +193,7 @@ export default function InvoicesView() {
       date: formData.date,
       dueDate: formData.dueDate,
       items: formData.items,
-      taxRate: formData.taxRate,
+      taxRate: businessSettings.type === 'EsekPatur' ? 0 : 18,
       status: formData.status
     };
 
@@ -643,14 +644,22 @@ export default function InvoicesView() {
 
             <div className="pt-4 border-t space-y-4 md:space-y-2">
               <div className="flex justify-between md:justify-end items-center gap-4">
-                <label className="text-sm font-medium text-slate-500">{t('invoices.tax_rate')}</label>
+                <div className="flex flex-col items-end">
+                  <label className="text-sm font-medium text-slate-500">{t('invoices.tax_rate')}</label>
+                  {businessSettings.type === 'EsekPatur' ? (
+                    <span className="text-[10px] text-slate-400 font-medium">({t('profile.type_patur')})</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">(Fixed)</span>
+                  )}
+                </div>
                 <div className="w-24 md:w-28">
                   <Input 
                     type="number" 
                     placeholder="0" 
-                    className="h-11 md:h-10"
-                    value={formData.taxRate}
-                    onChange={(e) => setFormData({...formData, taxRate: parseFloat(e.target.value) || 0})}
+                    className="h-11 md:h-10 bg-slate-50 text-slate-500 cursor-not-allowed opacity-80"
+                    value={businessSettings.type === 'EsekPatur' ? 0 : 18}
+                    readOnly
+                    disabled
                   />
                 </div>
               </div>
@@ -661,10 +670,10 @@ export default function InvoicesView() {
                   <span>{formatCurrency(formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0))}</span>
                 </div>
                 <div className="flex justify-between w-full md:w-64 text-sm text-slate-500 px-1">
-                  <span>{t('invoices.tax')} ({formData.taxRate}%)</span>
+                  <span>{t('invoices.tax')} ({businessSettings.type === 'EsekPatur' ? 0 : 18}%)</span>
                   <span>
                     {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * (formData.taxRate / 100)
+                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * ((businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
                     )}
                   </span>
                 </div>
@@ -672,7 +681,7 @@ export default function InvoicesView() {
                   <span>{t('common.total')}</span>
                   <span className="text-primary font-bold">
                     {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * (1 + formData.taxRate / 100)
+                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * (1 + (businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
                     )}
                   </span>
                 </div>
