@@ -249,7 +249,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
     const taxAmount = subtotal * (invoice.taxRate / 100);
     const total = subtotal + taxAmount;
-    const newInvoice = { ...invoice, id: `INV-${Math.floor(1000 + Math.random() * 9000)}`, total };
+    
+    // Calculate next sequential ID based on currently synced invoices
+    const nextNumber = invoices.reduce((max, inv) => {
+      const match = inv.id.match(/\d+/);
+      const num = match ? parseInt(match[0], 10) : 0;
+      return num > max ? num : max;
+    }, 3999) + 1;
+
+    const newInvoice = { ...invoice, id: `INV-${nextNumber}`, total };
     
     setInvoices(prev => [newInvoice, ...prev]);
     setClients(prev => prev.map(c => 
