@@ -24,6 +24,11 @@ interface DriveListResponse {
   files: DriveFile[];
 }
 
+export interface BusinessFolder {
+  id: string;
+  name: string;
+}
+
 const DEFAULT_STATE: AppState = {
   expenses: [],
   clients: [],
@@ -106,22 +111,49 @@ async function createFile(token: string, name: string, content: AppState | null 
 }
 
 /**
- * Scans user's Drive for FinFlow Data folder and app_data.json. Returns fileId.
- * Creates them if they don't exist.
+ * Lists all business folders inside the root FinFlow Data folder.
  */
-export async function initAppState(token: string): Promise<string> {
+export async function listBusinesses(token: string): Promise<BusinessFolder[]> {
+  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
+  if (!rootId) {
+    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
+    return [];
+  }
+
+  const q = `trashed = false and '${rootId}' in parents and mimeType = 'application/vnd.google-apps.folder'`;
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) throw new Error('Failed to list businesses');
+  const data = await response.json();
+  return data.files || [];
+}
+
+/**
+ * Scans user's Drive for FinFlow Data -> [Business Folder] -> app_data.json. 
+ * Returns fileId and businessFolderId. Creates them if they don't exist.
+ */
+export async function initAppState(token: string, businessName: string): Promise<{ fileId: string; folderId: string }> {
   // 1. Find or create root folder
   let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
   if (!rootId) {
     rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
   }
 
-  // 2. Find or create app data file inside root folder
-  let fileId = await findFileId(token, APP_DATA_FILENAME, false, rootId);
-  if (!fileId) {
-    fileId = await createFile(token, APP_DATA_FILENAME, DEFAULT_STATE, false, rootId);
+  // 2. Find or create business folder
+  let businessFolderId = await findFileId(token, businessName, true, rootId);
+  if (!businessFolderId) {
+    businessFolderId = await createFile(token, businessName, null, true, rootId);
   }
-  return fileId;
+
+  // 3. Find or create app data file inside business folder
+  let fileId = await findFileId(token, APP_DATA_FILENAME, false, businessFolderId);
+  if (!fileId) {
+    fileId = await createFile(token, APP_DATA_FILENAME, DEFAULT_STATE, false, businessFolderId);
+  }
+  
+  return { fileId, folderId: businessFolderId };
 }
 
 /**
@@ -189,23 +221,17 @@ async function setPublicPermission(token: string, fileId: string): Promise<void>
 }
 
 /**
- * Creates "Business App Receipts" folder inside "FinFlow Data" and uploads file.
+ * Creates "Business App Receipts" folder inside the specific business folder and uploads file.
  * Automatically nests the file inside a year-specific folder (e.g., "2025").
  */
-export async function uploadReceiptToDrive(token: string, file: File, metadata: { vendor: string; date: string }): Promise<string> {
-  // 1. Find or create root folder "FinFlow Data"
-  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
-  if (!rootId) {
-    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
-  }
-
-  // 2. Find or create receipts folder "Business App Receipts" inside root folder
-  let receiptsFolderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true, rootId);
+export async function uploadReceiptToDrive(token: string, file: File, metadata: { vendor: string; date: string }, businessFolderId: string): Promise<string> {
+  // 1. Find or create receipts folder "Business App Receipts" inside business folder
+  let receiptsFolderId = await findFileId(token, RECEIPTS_FOLDER_NAME, true, businessFolderId);
   if (!receiptsFolderId) {
-    receiptsFolderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true, rootId);
+    receiptsFolderId = await createFile(token, RECEIPTS_FOLDER_NAME, null, true, businessFolderId);
   }
 
-  // 3. Extract year and find or create year folder inside receipts folder
+  // 2. Extract year and find or create year folder inside receipts folder
   const year = new Date(metadata.date).getFullYear().toString();
   let yearFolderId = await findFileId(token, year, true, receiptsFolderId);
   if (!yearFolderId) {

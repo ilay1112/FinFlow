@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -14,20 +14,49 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  Plus
 } from 'lucide-react';
 import { cn } from '../utils/utils';
 import { Button } from '../components/ui/Button';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
+import { Modal } from '../components/ui/Modal';
+import { Input } from '../components/ui/Input';
 
 export function AppLayout() {
   const { t, i18n } = useTranslation();
   const { user, logout, isAuthenticated } = useAuth();
-  const { isLoading, isSyncing, syncError } = useFinance();
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const { isLoading, isSyncing, syncError, businesses, activeBusiness, switchBusiness, createBusiness } = useFinance();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isBusinessDropdownOpen, setIsBusinessDropdownOpen] = useState(false);
+  const [isCreateBusinessModalOpen, setIsCreateBusinessModalOpen] = useState(false);
+  const [newBusinessName, setNewBusinessName] = useState('');
+  const businessDropdownRef = useRef<HTMLDivElement>(null);
+  
   const isRtl = i18n.language === 'he';
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (businessDropdownRef.current && !businessDropdownRef.current.contains(event.target as Node)) {
+        setIsBusinessDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleCreateBusiness = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newBusinessName.trim()) {
+      await createBusiness(newBusinessName.trim());
+      setNewBusinessName('');
+      setIsCreateBusinessModalOpen(false);
+      setIsBusinessDropdownOpen(false);
+    }
+  };
 
   const navigation = [
     { name: t('common.dashboard'), href: '/', icon: LayoutDashboard },
@@ -66,17 +95,64 @@ export function AppLayout() {
           : isRtl ? "translate-x-full" : "-translate-x-full"
       )}>
         <div className="h-full flex flex-col">
-          <div className="p-6 border-b flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="bg-primary rounded-lg p-2">
-                <CreditCard className="h-6 w-6 text-primary-foreground" />
+          <div className="p-4 border-b relative" ref={businessDropdownRef}>
+            <button 
+              className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 p-2 rounded-lg transition-colors text-left"
+              onClick={() => setIsBusinessDropdownOpen(!isBusinessDropdownOpen)}
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="bg-primary rounded-lg p-2 shrink-0">
+                  <CreditCard className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider leading-none mb-1">Workspace</span>
+                  <span className="text-sm font-bold text-slate-900 tracking-tight truncate leading-none">
+                    {activeBusiness ? activeBusiness.name : 'FinFlow'}
+                  </span>
+                </div>
               </div>
-              <span className="text-xl font-bold text-slate-900 tracking-tight">FinFlow</span>
-            </div>
+              <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+            </button>
+
+            {isBusinessDropdownOpen && (
+              <div className="absolute top-full left-4 right-4 mt-2 bg-white border shadow-xl rounded-lg z-[60] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="max-h-60 overflow-y-auto p-1">
+                  {businesses.map((business) => (
+                    <button
+                      key={business.id}
+                      className={cn(
+                        "w-full text-start px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                        activeBusiness?.id === business.id ? "bg-primary/10 text-primary" : "text-slate-700 hover:bg-slate-100"
+                      )}
+                      onClick={() => {
+                        switchBusiness(business.id);
+                        setIsBusinessDropdownOpen(false);
+                      }}
+                    >
+                      {business.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="p-1 border-t bg-slate-50">
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
+                    onClick={() => {
+                      setIsCreateBusinessModalOpen(true);
+                    }}
+                  >
+                    <div className="bg-white rounded p-1 shadow-sm border border-slate-200">
+                      <Plus className="h-3 w-3 text-slate-600" />
+                    </div>
+                    Create Workspace
+                  </button>
+                </div>
+              </div>
+            )}
+            
             <Button 
               variant="ghost" 
               size="icon" 
-              className="md:hidden" 
+              className="md:hidden absolute top-4 right-4" 
               onClick={() => setIsSidebarOpen(false)}
             >
               <X className="h-5 w-5" />
@@ -184,12 +260,12 @@ export function AppLayout() {
             <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-500">
               <span>Workspace</span>
               <span className="text-slate-300">/</span>
-              <span className="text-slate-900">Small Business</span>
+              <span className="text-slate-900">{activeBusiness ? activeBusiness.name : 'FinFlow'}</span>
             </div>
           </div>
           
           <div className="flex-1 md:hidden text-center font-bold text-xl">
-            FinFlow
+            {activeBusiness ? activeBusiness.name : 'FinFlow'}
           </div>
 
           <div className="flex items-center gap-4">
@@ -220,6 +296,34 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+
+      {/* Create Workspace Modal */}
+      <Modal 
+        isOpen={isCreateBusinessModalOpen} 
+        onClose={() => setIsCreateBusinessModalOpen(false)} 
+        title="Create Workspace"
+      >
+        <form onSubmit={handleCreateBusiness} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Workspace Name</label>
+            <Input 
+              placeholder="e.g. My Side Hustle" 
+              value={newBusinessName}
+              onChange={(e) => setNewBusinessName(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={() => setIsCreateBusinessModalOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={!newBusinessName.trim() || isLoading}>
+              {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Create & Switch'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
