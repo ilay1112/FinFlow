@@ -125,8 +125,7 @@ export default function BookingAgentsView() {
 
   const handleOpenPayModal = (bookingAgent: BookingAgent) => {
     setSelectedAgentForPayment(bookingAgent);
-    const toPay = Math.max(0, bookingAgent.totalCommissions - (bookingAgent.totalPaid || 0));
-    setPaymentAmount(toPay.toFixed(2));
+    setPaymentAmount('');
     setReceiptFile(null);
     setIsPayModalOpen(true);
   };
@@ -201,6 +200,10 @@ export default function BookingAgentsView() {
   const bookingAgentInvoices = selectedBookingAgentForHistory 
     ? invoices.filter(inv => inv.bookingAgentId === selectedBookingAgentForHistory.id)
     : [];
+
+  const remainingToPay = selectedAgentForPayment 
+    ? (selectedAgentForPayment.totalCommissions - (selectedAgentForPayment.totalPaid || 0)) - (parseFloat(paymentAmount) || 0)
+    : 0;
 
   return (
     <div className="space-y-6 px-1 md:px-0">
@@ -466,14 +469,18 @@ export default function BookingAgentsView() {
                 type="number" 
                 step="0.01"
                 required
-                className="h-11 md:h-10 pe-12"
+                placeholder="0"
+                className="h-11 md:h-10 pe-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₪</span>
             </div>
-            <p className="text-xs text-slate-500">
-              {t('bookingAgents.to_pay_amount')}: {selectedAgentForPayment ? formatCurrency(Math.max(0, selectedAgentForPayment.totalCommissions - (selectedAgentForPayment.totalPaid || 0))) : '₪0'}
+            <p className={cn(
+              "text-xs font-bold transition-colors duration-200", 
+              remainingToPay > 0 ? "text-red-600" : "text-green-600"
+            )}>
+              {t('bookingAgents.to_pay_amount')}: {formatCurrency(remainingToPay)}
             </p>
           </div>
 
