@@ -61,7 +61,7 @@ export function AppLayout() {
   const navigation = [
     { name: t('common.dashboard'), href: '/', icon: LayoutDashboard },
     { name: t('common.expenses'), href: '/expenses', icon: Receipt },
-    { name: t('common.invoices'), href: '/invoices', icon: FileText },
+    { name: t('common.invoices_receipts') || t('common.invoices'), href: '/invoices', icon: FileText },
     { name: t('common.clients'), href: '/clients', icon: Users },
     { name: t('common.taxes'), href: '/taxes', icon: Calculator },
   ];
@@ -105,7 +105,7 @@ export function AppLayout() {
                   <CreditCard className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="flex flex-col overflow-hidden">
-                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider leading-none mb-1">Workspace</span>
+                  <span className="text-xs text-slate-500 uppercase font-bold tracking-wider leading-none mb-1">{t('common.workspace')}</span>
                   <span className="text-sm font-bold text-slate-900 tracking-tight truncate leading-none">
                     {activeBusiness ? activeBusiness.name : 'FinFlow'}
                   </span>
@@ -133,17 +133,31 @@ export function AppLayout() {
                     </button>
                   ))}
                 </div>
-                <div className="p-1 border-t bg-slate-50">
+                <div className="p-1 border-t bg-slate-50 space-y-1">
+                  <NavLink
+                    to="/profile"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
+                    onClick={() => {
+                      setIsBusinessDropdownOpen(false);
+                      setIsSidebarOpen(false);
+                    }}
+                  >
+                    <div className="bg-white rounded p-1 shadow-sm border border-slate-200">
+                      <Users className="h-3 w-3 text-slate-600" />
+                    </div>
+                    {t('common.profile') || 'Business Profile'}
+                  </NavLink>
                   <button
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
                     onClick={() => {
                       setIsCreateBusinessModalOpen(true);
+                      setIsBusinessDropdownOpen(false);
                     }}
                   >
                     <div className="bg-white rounded p-1 shadow-sm border border-slate-200">
                       <Plus className="h-3 w-3 text-slate-600" />
                     </div>
-                    Create Workspace
+                    {t('common.create_workspace')}
                   </button>
                 </div>
               </div>
@@ -207,36 +221,31 @@ export function AppLayout() {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-3 px-2">
-                  <NavLink 
-                    to="/profile" 
-                    onClick={() => setIsSidebarOpen(false)}
-                    className="shrink-0 hover:ring-2 hover:ring-primary/20 rounded-full transition-all active:scale-95"
-                  >
+                <div className="flex flex-col gap-3 px-1">
+                  <div className="flex items-center gap-3">
                     <img 
                       src={user?.picture} 
                       alt={user?.name} 
-                      className="h-10 w-10 rounded-full border-2 border-white shadow-md"
+                      className="h-10 w-10 rounded-full border-2 border-slate-200 shadow-sm"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
                       }}
                     />
-                  </NavLink>
-                  <div className="flex-1 overflow-hidden">
-                    <NavLink 
-                      to="/profile" 
-                      onClick={() => setIsSidebarOpen(false)}
-                      className="text-sm font-bold text-slate-900 truncate block hover:text-primary transition-colors"
-                    >
-                      {user?.name}
-                    </NavLink>
-                    <button 
-                      onClick={logout}
-                      className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-1 transition-colors font-medium mt-0.5"
-                    >
-                      <LogOut className="h-3 w-3" /> Sign Out
-                    </button>
+                    <div className="flex-1 overflow-hidden">
+                      <p className="text-sm font-bold text-slate-900 truncate block">
+                        {user?.name}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                    </div>
                   </div>
+                  
+                  <Button 
+                    variant="outline"
+                    onClick={logout}
+                    className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 font-bold justify-center mt-2"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" /> Sign Out
+                  </Button>
                 </div>
               </div>
             )}
@@ -258,7 +267,7 @@ export function AppLayout() {
             </Button>
             
             <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-500">
-              <span>Workspace</span>
+              <span>{t('common.workspace')}</span>
               <span className="text-slate-300">/</span>
               <span className="text-slate-900">{activeBusiness ? activeBusiness.name : 'FinFlow'}</span>
             </div>
@@ -301,13 +310,13 @@ export function AppLayout() {
       <Modal 
         isOpen={isCreateBusinessModalOpen} 
         onClose={() => setIsCreateBusinessModalOpen(false)} 
-        title="Create Workspace"
+        title={t('common.create_workspace')}
       >
         <form onSubmit={handleCreateBusiness} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Workspace Name</label>
+            <label className="text-sm font-medium">{t('common.workspace_name')}</label>
             <Input 
-              placeholder="e.g. My Side Hustle" 
+              placeholder={t('common.workspace_placeholder')} 
               value={newBusinessName}
               onChange={(e) => setNewBusinessName(e.target.value)}
               autoFocus
@@ -319,7 +328,7 @@ export function AppLayout() {
               {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!newBusinessName.trim() || isLoading}>
-              {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Create & Switch'}
+              {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common.create_and_switch')}
             </Button>
           </div>
         </form>

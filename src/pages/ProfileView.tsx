@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle, Cloud, LogOut } from 'lucide-react';
+import { CheckCircle, Cloud, LogOut, AlertCircle } from 'lucide-react';
 
 export default function ProfileView() {
   const { t } = useTranslation();
@@ -13,6 +13,9 @@ export default function ProfileView() {
   const { user, isAuthenticated, logout, login } = useAuth();
   const [formData, setFormData] = useState<BusinessSettings>(businessSettings);
   const [isSaved, setIsSaved] = useState(false);
+
+  // Check if profile is incomplete (forced onboarding state)
+  const isProfileIncomplete = !businessSettings.name;
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -29,6 +32,13 @@ export default function ProfileView() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      {isProfileIncomplete && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <p className="text-sm font-medium">{t('profile.incomplete_error')}</p>
+        </div>
+      )}
+
       <div>
         <h1 className="text-3xl font-bold text-slate-900">{t('profile.title')}</h1>
         <p className="text-slate-500 mt-1">{t('profile.subtitle')}</p>

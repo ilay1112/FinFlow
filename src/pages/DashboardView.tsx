@@ -82,7 +82,7 @@ export default function DashboardView() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isRtl = i18n.language === 'he';
-  const { expenses, invoices } = useFinance();
+  const { expenses, invoices, activeBusiness } = useFinance();
   const [timeRange, setTimeRange] = useState<TimeRange>('CurrentMonth');
 
   // Calculate Date Intervals based on selection
@@ -186,18 +186,18 @@ export default function DashboardView() {
     <div className="space-y-6 md:space-y-8 px-1 md:px-0">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 md:gap-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('dashboard.title')}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{activeBusiness ? activeBusiness.name : t('dashboard.title')}</h1>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('dashboard.subtitle')}</p>
         </div>
 
-        <div className="bg-white p-1 md:p-1.5 rounded-xl border shadow-sm flex items-center gap-1">
+        <div className="bg-white p-1 md:p-1.5 rounded-xl border shadow-sm flex items-center gap-1 w-full lg:w-auto">
           {(['CurrentMonth', 'CurrentYear'] as TimeRange[]).map((range) => (
             <Button
               key={range}
               variant={timeRange === range ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setTimeRange(range)}
-              className="text-[10px] md:text-xs h-9 md:h-8 px-4"
+              className="flex-1 lg:flex-none text-[10px] md:text-xs h-10 md:h-8 px-4"
             >
               {range === 'CurrentMonth' ? t('dashboard.current_month') : t('dashboard.current_year')}
             </Button>
@@ -214,7 +214,7 @@ export default function DashboardView() {
         >
           <div className="flex flex-col items-center gap-1">
             <FileText className="h-5 w-5 text-slate-400 group-hover:text-primary transition-colors" />
-            <span className="text-xs font-bold text-slate-600 group-hover:text-primary">{t('dashboard.new_receipt') || 'New Receipt'}</span>
+            <span className="text-xs font-bold text-slate-600 group-hover:text-primary">{t('dashboard.new_invoice_receipt') || t('dashboard.new_receipt')}</span>
           </div>
         </Button>
         <Button 

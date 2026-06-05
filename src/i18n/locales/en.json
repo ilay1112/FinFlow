@@ -28,6 +28,7 @@
     "dashboard": "Dashboard",
     "expenses": "Expenses",
     "invoices": "Invoices",
+    "invoices_receipts": "Invoices/Receipts",
     "clients": "Clients",
     "taxes": "Taxes",
     "profile": "Profile",
@@ -48,7 +49,12 @@
     "currency": "ILS",
     "total": "Total",
     "continue_with": "Continue with",
-    "syncing": "Syncing with Drive..."
+    "syncing": "Syncing with Drive...",
+    "workspace": "Workspace",
+    "create_workspace": "Create Workspace",
+    "workspace_name": "Workspace Name",
+    "create_and_switch": "Create & Switch",
+    "workspace_placeholder": "e.g. My Side Hustle"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -71,6 +77,7 @@
     "progressive_tax_desc": "Tax liability is calculated based on the official 2026 progressive income tax brackets.",
     "no_data": "No data for this period.",
     "new_receipt": "New Receipt",
+    "new_invoice_receipt": "New Invoice/Receipt",
     "new_expense": "New Expense",
     "new_client": "New Client"
   },
@@ -100,12 +107,12 @@
     "action_required": "Action required"
   },
   "invoices": {
-    "title": "Invoices",
-    "subtitle": "Generate and track customer invoices.",
-    "create_invoice": "Create Invoice",
+    "title": "Invoices/Receipts",
+    "subtitle": "Generate and track customer documents.",
+    "create_invoice": "New Invoice/Receipt",
     "receipt_title": "Receipt",
     "tax_invoice_title": "Tax Invoice",
-    "invoice_id": "Invoice ID",
+    "invoice_id": "Document ID",
     "client": "Client",
     "dates": "Dates",
     "download_pdf": "Download PDF",
@@ -174,10 +181,11 @@
     "type_patur": "Esek Patur (Exempt)",
     "type_morshe": "Esek Morshe (Licensed)",
     "type_company": "Company (Ltd.)",
-    "type_help": "This changes the legal titles on your invoices (e.g., \"Tax Invoice\" vs \"Invoice\").",
+    "type_help": "This changes the legal titles on your receipts (e.g., \"Tax Receipt\" vs \"Receipt\").",
     "address": "Address",
     "phone": "Phone",
     "email": "Email",
-    "save_success": "Profile updated successfully"
-  }
-}
+    "save_success": "Profile updated successfully",
+    "incomplete_error": "Please complete your business profile to continue using FinFlow."
+    }
+    }
