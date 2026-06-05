@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { 
   LayoutDashboard, 
@@ -31,6 +31,7 @@ export function AppLayout() {
   const { t, i18n } = useTranslation();
   const { user, logout, isAuthenticated } = useAuth();
   const { isLoading, isSyncing, syncError, businesses, activeBusiness, switchBusiness, createBusiness } = useFinance();
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBusinessDropdownOpen, setIsBusinessDropdownOpen] = useState(false);
   const [isCreateBusinessModalOpen, setIsCreateBusinessModalOpen] = useState(false);
@@ -38,6 +39,11 @@ export function AppLayout() {
   const businessDropdownRef = useRef<HTMLDivElement>(null);
   
   const isRtl = i18n.language === 'he';
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -243,7 +249,7 @@ export function AppLayout() {
                   
                   <Button 
                     variant="outline"
-                    onClick={logout}
+                    onClick={handleLogout}
                     className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 font-bold justify-center mt-2"
                   >
                     <LogOut className="h-4 w-4 mr-2" /> Sign Out
