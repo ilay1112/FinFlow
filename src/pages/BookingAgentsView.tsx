@@ -440,7 +440,7 @@ export default function BookingAgentsView() {
                   value={formData.commissionRate}
                   onChange={(e) => setFormData({...formData, commissionRate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">%</span>
+                <span className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">%</span>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
@@ -474,7 +474,7 @@ export default function BookingAgentsView() {
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₪</span>
+              <span className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₪</span>
             </div>
             <p className={cn(
               "text-xs font-bold transition-colors duration-200", 
