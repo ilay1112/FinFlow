@@ -125,7 +125,7 @@ export default function InvoicesView() {
       dueDate: today,
       items: [{ id: '1', description: '', quantity: 1, unitPrice: '' }],
       taxRate: 0,
-      status: 'Sent' as Invoice['status']
+      status: 'Paid' as Invoice['status']
     };
   });
 
@@ -175,7 +175,7 @@ export default function InvoicesView() {
         dueDate: today,
         items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }],
         taxRate: isPatur ? 0 : 18,
-        status: 'Sent'
+        status: 'Paid'
       });
     }
     setIsModalOpen(false); // Close first to reset any scroll
