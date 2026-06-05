@@ -369,14 +369,29 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
     let billedAdjustment = 0;
     let clientId = '';
-    let commissionAdjustment = 0;
-    let agentId = '';
+    
+    let oldAgentId = '';
+    let oldCommission = 0;
+    let newAgentId = '';
+    let newCommission = 0;
+    let hasAgentChange = false;
+    let hasCommissionChange = false;
 
     setInvoices(prev => prev.map(inv => {
       if (inv.id === id) {
         const updated = { ...inv, ...updates };
         clientId = inv.clientId;
-        agentId = inv.bookingAgentId || '';
+        
+        oldAgentId = inv.bookingAgentId || '';
+        oldCommission = inv.commissionAmount || 0;
+        newAgentId = updated.bookingAgentId || '';
+        newCommission = updated.commissionAmount || 0;
+        
+        if (oldAgentId !== newAgentId) {
+          hasAgentChange = true;
+        } else if (oldCommission !== newCommission) {
+          hasCommissionChange = true;
+        }
 
         // Recalculate total if items or taxRate changed
         const subtotal = updated.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
@@ -384,20 +399,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updated.total = subtotal + taxAmount;
 
         // Handle totalBilled adjustment for clients
-        // If status changed to Refunded, subtract the total
         if (inv.status !== 'Refunded' && updated.status === 'Refunded') {
           billedAdjustment = -updated.total;
         } else if (inv.status === 'Refunded' && updated.status !== 'Refunded') {
-          // If status changed FROM Refunded to something else, add it back
           billedAdjustment = updated.total;
         } else if (inv.total !== updated.total && updated.status !== 'Refunded') {
-          // If total changed and not refunded, adjust by difference
           billedAdjustment = updated.total - inv.total;
-        }
-
-        // Handle commission adjustment
-        if (inv.commissionAmount !== updated.commissionAmount) {
-          commissionAdjustment = (updated.commissionAmount || 0) - (inv.commissionAmount || 0);
         }
 
         return updated;
@@ -411,9 +418,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ));
     }
 
-    if (commissionAdjustment !== 0 && agentId) {
+    if (hasAgentChange) {
+      setBookingAgents(prev => prev.map(a => {
+        if (a.id === oldAgentId) {
+          return { ...a, totalCommissions: Math.max(0, a.totalCommissions - oldCommission) };
+        }
+        if (a.id === newAgentId) {
+          return { ...a, totalCommissions: a.totalCommissions + newCommission };
+        }
+        return a;
+      }));
+    } else if (hasCommissionChange && oldAgentId) {
+      const adjustment = newCommission - oldCommission;
       setBookingAgents(prev => prev.map(a => 
-        a.id === agentId ? { ...a, totalCommissions: a.totalCommissions + commissionAdjustment } : a
+        a.id === oldAgentId ? { ...a, totalCommissions: a.totalCommissions + adjustment } : a
       ));
     }
   };
