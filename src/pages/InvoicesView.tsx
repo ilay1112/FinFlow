@@ -36,7 +36,7 @@ interface InvoiceFormData {
   commissionAmount?: number;
   date: string;
   dueDate: string;
-  items: InvoiceItem[];
+  items: (Omit<InvoiceItem, 'unitPrice'> & { unitPrice: number | '' })[];
   taxRate: number;
   status: Invoice['status'];
 }
@@ -123,7 +123,7 @@ export default function InvoicesView() {
       commissionAmount: 0,
       date: today,
       dueDate: today,
-      items: [{ id: '1', description: '', quantity: 1, unitPrice: 0 }] as InvoiceItem[],
+      items: [{ id: '1', description: '', quantity: 1, unitPrice: '' }],
       taxRate: 0,
       status: 'Sent' as Invoice['status']
     };
@@ -173,7 +173,7 @@ export default function InvoicesView() {
         commissionAmount: 0,
         date: today,
         dueDate: today,
-        items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: 0 }],
+        items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }],
         taxRate: isPatur ? 0 : 18,
         status: 'Sent'
       });
@@ -232,12 +232,18 @@ export default function InvoicesView() {
     let currentAgentName = '';
     let commission = 0;
 
+    // Convert items back to valid InvoiceItem for the context
+    const processedItems = formData.items.map(item => ({
+      ...item,
+      unitPrice: item.unitPrice === '' ? 0 : item.unitPrice
+    })) as InvoiceItem[];
+
     const existingAgent = bookingAgents.find(a => a.id === currentAgentId || a.name === agentSearchTerm);
     if (existingAgent) {
       currentAgentId = existingAgent.id;
       currentAgentName = existingAgent.name;
       // Calculate commission based on subtotal
-      const subtotal = formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+      const subtotal = processedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
       commission = subtotal * (existingAgent.commissionRate / 100);
     } else if (agentSearchTerm.trim()) {
       currentAgentId = 'custom';
@@ -256,7 +262,7 @@ export default function InvoicesView() {
       commissionAmount: commission || undefined,
       date: formData.date,
       dueDate: formData.dueDate,
-      items: formData.items,
+      items: processedItems,
       taxRate: activeTaxRate,
       status: formData.status
     };
@@ -272,7 +278,7 @@ export default function InvoicesView() {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { id: Date.now().toString(), description: '', quantity: 1, unitPrice: 0 }]
+      items: [...formData.items, { id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }]
     });
   };
 
@@ -761,7 +767,7 @@ export default function InvoicesView() {
                           value={item.unitPrice}
                           onChange={(e) => {
                             const items = [...formData.items];
-                            items[index].unitPrice = parseFloat(e.target.value) || 0;
+                            items[index].unitPrice = e.target.value === '' ? '' : (parseFloat(e.target.value) || 0);
                             setFormData({...formData, items});
                           }}
                         />
@@ -814,13 +820,13 @@ export default function InvoicesView() {
               <div className="flex flex-col items-end gap-1.5 md:gap-1">
                 <div className="flex justify-between w-full md:w-64 text-sm text-slate-500 px-1">
                   <span>{t('invoices.subtotal')}</span>
-                  <span>{formatCurrency(formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0))}</span>
+                  <span>{formatCurrency(formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0))}</span>
                 </div>
                 <div className="flex justify-between w-full md:w-64 text-sm text-slate-500 px-1">
                   <span>{t('invoices.tax')} ({businessSettings.type === 'EsekPatur' ? 0 : 18}%)</span>
                   <span>
                     {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * ((businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
+                      formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0) * ((businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
                     )}
                   </span>
                 </div>
@@ -828,7 +834,7 @@ export default function InvoicesView() {
                   <span>{t('common.total')}</span>
                   <span className="text-primary font-bold">
                     {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * (1 + (businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
+                      formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0) * (1 + (businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
                     )}
                   </span>
                 </div>
