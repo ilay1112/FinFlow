@@ -7,7 +7,6 @@ import {
   CheckCircle, 
   Clock, 
   Search, 
-  Filter, 
   Trash2, 
   Edit2, 
   X, 
@@ -16,7 +15,9 @@ import {
   FileDown,
   Loader2,
   UserPlus,
-  ArrowRight
+  ArrowRight,
+  Briefcase,
+  RotateCcw
 } from 'lucide-react';
 import { useFinance, type Invoice, type InvoiceItem } from '../context/FinanceContext';
 import { generateInvoicePDF } from '../services/pdf/invoice-service';
@@ -28,10 +29,11 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
-import { cn } from '../utils/utils';
 
 interface InvoiceFormData {
   clientId: string;
+  bookingAgentId?: string;
+  commissionAmount?: number;
   date: string;
   dueDate: string;
   items: InvoiceItem[];
@@ -41,12 +43,14 @@ interface InvoiceFormData {
 
 export default function InvoicesView() {
   const { t, i18n } = useTranslation();
-  const { invoices, clients, addInvoice, updateInvoice, deleteInvoice, businessSettings } = useFinance();
+  const { invoices, clients, bookingAgents, addInvoice, updateInvoice, deleteInvoice, businessSettings } = useFinance();
   const location = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+  const [isRefundAlertOpen, setIsRefundAlertOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
+  const [invoiceToRefund, setInvoiceToRefund] = useState<Invoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -54,10 +58,14 @@ export default function InvoicesView() {
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('All');
+  
+  // Booking Agent Search State
+  const [agentSearchTerm, setAgentSearchTerm] = useState('');
+  const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
+
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const isRtl = i18n.language === 'he';
 
   // Handle URL actions (Quick Actions from Dashboard)
   useEffect(() => {
@@ -70,11 +78,14 @@ export default function InvoicesView() {
     }
   }, [location.search]);
 
-  // Click outside listener for client dropdown
+  // Click outside listener for dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsClientDropdownOpen(false);
+      }
+      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target as Node)) {
+        setIsAgentDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -90,6 +101,15 @@ export default function InvoicesView() {
     ).slice(0, 5);
   }, [clients, clientSearchTerm]);
 
+  // Filtered agents for search
+  const filteredSearchAgents = useMemo(() => {
+    if (!agentSearchTerm) return bookingAgents.slice(0, 5);
+    return bookingAgents.filter(a => 
+      a.name.toLowerCase().includes(agentSearchTerm.toLowerCase()) ||
+      a.email.toLowerCase().includes(agentSearchTerm.toLowerCase())
+    ).slice(0, 5);
+  }, [bookingAgents, agentSearchTerm]);
+
   // PDF Generation State
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [pdfInvoice, setPdfInvoice] = useState<Invoice | null>(null);
@@ -99,6 +119,8 @@ export default function InvoicesView() {
     const today = new Date().toISOString().split('T')[0];
     return {
       clientId: '',
+      bookingAgentId: '',
+      commissionAmount: 0,
       date: today,
       dueDate: today,
       items: [{ id: '1', description: '', quantity: 1, unitPrice: 0 }] as InvoiceItem[],
@@ -110,27 +132,30 @@ export default function InvoicesView() {
   const filteredInvoices = invoices.filter(inv => {
     const matchesSearch = inv.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          inv.clientName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
     
     const invoiceDate = new Date(inv.date);
     const matchesStartDate = !startDate || invoiceDate >= new Date(startDate);
     const matchesEndDate = !endDate || invoiceDate <= new Date(endDate);
 
-    return matchesSearch && matchesStatus && matchesStartDate && matchesEndDate;
+    return matchesSearch && matchesStartDate && matchesEndDate;
   });
 
   // Analytics
   const totalPaid = invoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + i.total, 0);
   const totalOutstanding = invoices.filter(i => i.status === 'Sent').reduce((sum, i) => sum + i.total, 0);
   const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + i.total, 0);
+  const totalRefunded = invoices.filter(i => i.status === 'Refunded').reduce((sum, i) => sum + i.total, 0);
 
   const handleOpenModal = (invoice?: Invoice) => {
     const isPatur = businessSettings.type === 'EsekPatur';
     if (invoice) {
       setEditingInvoice(invoice);
       setClientSearchTerm(invoice.clientName);
+      setAgentSearchTerm(invoice.bookingAgentName || '');
       setFormData({
         clientId: invoice.clientId,
+        bookingAgentId: invoice.bookingAgentId || '',
+        commissionAmount: invoice.commissionAmount || 0,
         date: invoice.date,
         dueDate: invoice.dueDate,
         items: [...invoice.items],
@@ -140,9 +165,12 @@ export default function InvoicesView() {
     } else {
       setEditingInvoice(null);
       setClientSearchTerm('');
+      setAgentSearchTerm('');
       const today = new Date().toISOString().split('T')[0];
       setFormData({
         clientId: '',
+        bookingAgentId: '',
+        commissionAmount: 0,
         date: today,
         dueDate: today,
         items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: 0 }],
@@ -163,6 +191,18 @@ export default function InvoicesView() {
     if (invoiceToDelete) {
       deleteInvoice(invoiceToDelete);
       setInvoiceToDelete(null);
+    }
+  };
+
+  const handleOpenRefundAlert = (invoice: Invoice) => {
+    setInvoiceToRefund(invoice);
+    setIsRefundAlertOpen(true);
+  };
+
+  const confirmRefund = () => {
+    if (invoiceToRefund) {
+      updateInvoice(invoiceToRefund.id, { status: 'Refunded' });
+      setInvoiceToRefund(null);
     }
   };
 
@@ -187,12 +227,33 @@ export default function InvoicesView() {
       return;
     }
 
+    // Handle Booking Agent
+    let currentAgentId = formData.bookingAgentId;
+    let currentAgentName = '';
+    let commission = 0;
+
+    const existingAgent = bookingAgents.find(a => a.id === currentAgentId || a.name === agentSearchTerm);
+    if (existingAgent) {
+      currentAgentId = existingAgent.id;
+      currentAgentName = existingAgent.name;
+      // Calculate commission based on subtotal
+      const subtotal = formData.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+      commission = subtotal * (existingAgent.commissionRate / 100);
+    } else if (agentSearchTerm.trim()) {
+      currentAgentId = 'custom';
+      currentAgentName = agentSearchTerm.trim();
+      commission = formData.commissionAmount || 0;
+    }
+
     // Explicitly determine tax rate based strictly on the current active business settings
     const activeTaxRate = businessSettings.type === 'EsekPatur' ? 0 : 18;
 
     const invoiceData = {
       clientId: currentClientId,
       clientName: currentClientName,
+      bookingAgentId: currentAgentId || undefined,
+      bookingAgentName: currentAgentName || undefined,
+      commissionAmount: commission || undefined,
       date: formData.date,
       dueDate: formData.dueDate,
       items: formData.items,
@@ -244,6 +305,7 @@ export default function InvoicesView() {
   const getStatusBadge = (status: Invoice['status']) => {
     switch (status) {
       case 'Paid': return <Badge variant="success" className="gap-1"><CheckCircle className="h-3 w-3" /> {t('invoices.paid')}</Badge>;
+      case 'Refunded': return <Badge variant="outline" className="gap-1 bg-slate-100 text-slate-600 border-slate-200"><RotateCcw className="h-3 w-3" /> {t('invoices.refunded')}</Badge>;
       case 'Sent': return <Badge variant="secondary" className="gap-1"><Send className="h-3 w-3" /> {t('invoices.sent')}</Badge>;
       case 'Overdue': return <Badge variant="destructive" className="gap-1"><Clock className="h-3 w-3" /> {t('invoices.overdue')}</Badge>;
       default: return <Badge variant="outline">{t('invoices.draft')}</Badge>;
@@ -263,7 +325,7 @@ export default function InvoicesView() {
       </div>
 
       {/* Analytics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <Card className="border-s-4 border-s-green-500">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
@@ -273,6 +335,19 @@ export default function InvoicesView() {
               </div>
               <div className="bg-green-100 p-2 rounded-full">
                 <CheckCircle className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-s-4 border-s-amber-500">
+          <CardContent className="pt-4 md:pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs md:text-sm font-medium text-slate-500 uppercase tracking-wider">{t('invoices.total_refunded')}</p>
+                <p className="text-xl md:text-2xl font-bold text-slate-900 mt-1">{formatCurrency(totalRefunded)}</p>
+              </div>
+              <div className="bg-amber-100 p-2 rounded-full">
+                <RotateCcw className="h-5 w-5 text-amber-600" />
               </div>
             </div>
           </CardContent>
@@ -290,7 +365,7 @@ export default function InvoicesView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-s-4 border-s-red-500 col-span-2 md:col-span-1">
+        <Card className="border-s-4 border-s-red-500">
           <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -347,21 +422,6 @@ export default function InvoicesView() {
                 )}
               </div>
             </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
-              <Filter className="h-4 w-4 text-slate-400 shrink-0" />
-              {['All', 'Paid', 'Sent', 'Overdue', 'Draft'].map(status => (
-                <Button 
-                  key={status} 
-                  variant={statusFilter === status ? 'default' : 'outline'} 
-                  size="sm"
-                  onClick={() => setStatusFilter(status)}
-                  className="px-4 py-2 h-9 md:h-8 whitespace-nowrap text-xs font-medium"
-                >
-                  {status === 'All' ? t('common.all') : t(`invoices.${status.toLowerCase()}`)}
-                </Button>
-              ))}
-            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -371,7 +431,7 @@ export default function InvoicesView() {
                 <TableRow>
                   <TableHead className="ps-6 text-start whitespace-nowrap">{t('invoices.invoice_id')}</TableHead>
                   <TableHead className="text-start whitespace-nowrap">{t('invoices.client')}</TableHead>
-                  <TableHead className="text-start whitespace-nowrap">{t('invoices.dates')}</TableHead>
+                  <TableHead className="text-start whitespace-nowrap">{t('common.date')}</TableHead>
                   <TableHead className="text-start whitespace-nowrap">{t('common.amount')}</TableHead>
                   <TableHead className="text-start whitespace-nowrap">{t('common.status')}</TableHead>
                   <TableHead className="text-end pe-6 whitespace-nowrap">{t('common.actions')}</TableHead>
@@ -383,20 +443,8 @@ export default function InvoicesView() {
                     <TableRow key={invoice.id}>
                       <TableCell className="ps-6 font-medium text-primary whitespace-nowrap">{invoice.id}</TableCell>
                       <TableCell className="font-semibold whitespace-nowrap">{invoice.clientName}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="text-[11px] md:text-xs space-y-0.5">
-                          <div className="flex items-center gap-1 text-slate-400">
-                            <span className="w-12">{isRtl ? 'הופק:' : 'Issued:'}</span>
-                            <span className="text-slate-600 font-medium">{invoice.date}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-slate-400">
-                            <span className="w-12">{isRtl ? 'פירעון:' : 'Due:'}</span>
-                            <span className={cn(
-                              "font-medium",
-                              invoice.status === 'Overdue' ? "text-red-500" : "text-slate-600"
-                            )}>{invoice.dueDate}</span>
-                          </div>
-                        </div>
+                      <TableCell className="whitespace-nowrap font-medium text-slate-600">
+                        {invoice.date}
                       </TableCell>
                       <TableCell className="font-bold text-slate-900 whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
                       <TableCell className="whitespace-nowrap">{getStatusBadge(invoice.status)}</TableCell>
@@ -412,6 +460,17 @@ export default function InvoicesView() {
                           >
                             <FileDown className="h-5 w-5 md:h-4 md:w-4" />
                           </Button>
+                          {invoice.status === 'Paid' && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-amber-600"
+                              onClick={() => handleOpenRefundAlert(invoice)}
+                              title={t('invoices.refund')}
+                            >
+                              <RotateCcw className="h-5 w-5 md:h-4 md:w-4" />
+                            </Button>
+                          )}
                           <Button 
                             variant="ghost" 
                             size="icon" 
@@ -454,6 +513,16 @@ export default function InvoicesView() {
         title={t('invoices.delete_title')}
         description={t('invoices.delete_description')}
         confirmText={t('common.delete')}
+        variant="destructive"
+      />
+
+      <AlertDialog 
+        isOpen={isRefundAlertOpen}
+        onClose={() => setIsRefundAlertOpen(false)}
+        onConfirm={confirmRefund}
+        title={t('invoices.refund_title')}
+        description={t('invoices.refund_description')}
+        confirmText={t('invoices.refund')}
         variant="destructive"
       />
 
@@ -555,13 +624,88 @@ export default function InvoicesView() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2 relative" ref={agentDropdownRef}>
+                <label className="text-sm font-medium">{t('common.booking_agents')}</label>
+                <div className="relative">
+                  <Briefcase className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input 
+                    placeholder={t('bookingAgents.search_placeholder')}
+                    className="ps-9 h-11 md:h-10"
+                    value={agentSearchTerm}
+                    onChange={(e) => {
+                      setAgentSearchTerm(e.target.value);
+                      setIsAgentDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsAgentDropdownOpen(true)}
+                  />
+                </div>
+
+                {isAgentDropdownOpen && (
+                  <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white rounded-lg border shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="max-h-60 overflow-y-auto">
+                      {filteredSearchAgents.length > 0 ? (
+                        filteredSearchAgents.map(agent => (
+                          <button
+                            key={agent.id}
+                            type="button"
+                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors border-b last:border-0"
+                            onClick={() => {
+                              setFormData({ ...formData, bookingAgentId: agent.id });
+                              setAgentSearchTerm(agent.name);
+                              setIsAgentDropdownOpen(false);
+                            }}
+                          >
+                            <div className="text-start">
+                              <p className="text-sm font-bold text-slate-900">{agent.name}</p>
+                              <p className="text-[10px] text-slate-500">{agent.commissionRate}% Commission</p>
+                            </div>
+                            <ArrowRight className="h-4 w-4 text-slate-300" />
+                          </button>
+                        ))
+                      ) : agentSearchTerm ? (
+                        <div className="p-4 text-center text-xs text-slate-500">
+                          No matching agents found.
+                        </div>
+                      ) : null}
+                    </div>
+                    
+                    <div className="bg-slate-50 p-2 space-y-1 border-t">
+                      {agentSearchTerm && !bookingAgents.some(a => a.name.toLowerCase() === agentSearchTerm.toLowerCase()) && (
+                        <div className="p-2 space-y-2">
+                           <p className="text-[10px] font-bold text-slate-500 uppercase px-1">Custom Commission</p>
+                           <Input 
+                             type="number"
+                             placeholder="Commission Amount (ILS)"
+                             className="h-9 text-xs"
+                             value={formData.commissionAmount}
+                             onChange={(e) => setFormData({...formData, commissionAmount: parseFloat(e.target.value) || 0})}
+                           />
+                           <button
+                             type="button"
+                             className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                             onClick={() => setIsAgentDropdownOpen(false)}
+                           >
+                             <Plus className="h-3 w-3" />
+                             <span>Use "{agentSearchTerm}" (Custom)</span>
+                           </button>
+                        </div>
+                      )}
+                      
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
+                        onClick={() => navigate(`/booking-agents?action=new&name=${encodeURIComponent(agentSearchTerm)}`)}
+                      >
+                        <UserPlus className="h-3 w-3" />
+                        <span>Add New Agent</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('invoices.issue_date')}</label>
                 <Input type="date" className="h-11 md:h-10" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('invoices.due_date')}</label>
-                <Input type="date" className="h-11 md:h-10" value={formData.dueDate} onChange={(e) => setFormData({...formData, dueDate: e.target.value})} />
               </div>
             </div>
 

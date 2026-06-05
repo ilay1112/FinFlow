@@ -1,4 +1,4 @@
-import type { Expense, Client, Invoice, BusinessSettings } from '../context/FinanceContext';
+import type { Expense, Client, Invoice, BusinessSettings, BookingAgent } from '../context/FinanceContext';
 
 const ROOT_FOLDER_NAME = 'FinFlow Data';
 const APP_DATA_FILENAME = 'app_data.json';
@@ -9,6 +9,7 @@ export interface AppState {
   clients: Client[];
   invoices: Invoice[];
   categories: string[];
+  bookingAgents?: BookingAgent[];
   taxRate: number;
   businessSettings: BusinessSettings;
 }
@@ -34,6 +35,7 @@ const DEFAULT_STATE: AppState = {
   clients: [],
   invoices: [],
   categories: ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'],
+  bookingAgents: [],
   taxRate: 20,
   businessSettings: {} as BusinessSettings
 };
