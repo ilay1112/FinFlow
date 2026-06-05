@@ -244,7 +244,14 @@ export default function InvoicesView() {
       currentAgentName = existingAgent.name;
       // Calculate commission based on subtotal
       const subtotal = processedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-      commission = subtotal * (existingAgent.commissionRate / 100);
+      let calculatedCommission = subtotal * (existingAgent.commissionRate / 100);
+      
+      // Apply minimum commission if defined
+      if (existingAgent.minCommission && calculatedCommission < existingAgent.minCommission) {
+        calculatedCommission = existingAgent.minCommission;
+      }
+      
+      commission = calculatedCommission;
     } else if (agentSearchTerm.trim()) {
       currentAgentId = 'custom';
       currentAgentName = agentSearchTerm.trim();

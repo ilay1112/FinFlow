@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Wallet,
   Upload,
-  CheckCircle2
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { cn } from '../utils/utils';
 import { useFinance, type BookingAgent } from '../context/FinanceContext';
@@ -65,7 +66,8 @@ export default function BookingAgentsView() {
         name: nameParam || '', 
         email: '', 
         phone: '', 
-        commissionRate: '' 
+        commissionRate: '',
+        minCommission: '' 
       });
       setIsModalOpen(true);
       
@@ -80,12 +82,16 @@ export default function BookingAgentsView() {
     email: string;
     phone: string;
     commissionRate: number | '';
+    minCommission: number | '';
   }>({
     name: '',
     email: '',
     phone: '',
-    commissionRate: ''
+    commissionRate: '',
+    minCommission: ''
   });
+
+  const [showMinCommission, setShowMinCommission] = useState(false);
 
   const filteredBookingAgents = bookingAgents.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,11 +110,20 @@ export default function BookingAgentsView() {
         name: bookingAgent.name,
         email: bookingAgent.email,
         phone: bookingAgent.phone,
-        commissionRate: bookingAgent.commissionRate
+        commissionRate: bookingAgent.commissionRate,
+        minCommission: bookingAgent.minCommission ?? ''
       });
+      setShowMinCommission(!!bookingAgent.minCommission);
     } else {
       setEditingBookingAgent(null);
-      setFormData({ name: '', email: '', phone: '', commissionRate: '' });
+      setFormData({ 
+        name: '', 
+        email: '', 
+        phone: '', 
+        commissionRate: '', 
+        minCommission: '' 
+      });
+      setShowMinCommission(false);
     }
     setIsModalOpen(true);
   };
@@ -141,7 +156,8 @@ export default function BookingAgentsView() {
     e.preventDefault();
     const dataToSubmit = {
       ...formData,
-      commissionRate: formData.commissionRate === '' ? 0 : formData.commissionRate
+      commissionRate: formData.commissionRate === '' ? 0 : formData.commissionRate,
+      minCommission: formData.minCommission === '' ? undefined : Number(formData.minCommission)
     };
     
     if (editingBookingAgent) {
@@ -429,19 +445,61 @@ export default function BookingAgentsView() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('bookingAgents.commission_rate_label')}</label>
-              <div className="relative">
-                <Input 
-                  type="number"
-                  placeholder="10"
-                  required
-                  className="h-11 md:h-10 pr-8"
-                  value={formData.commissionRate}
-                  onChange={(e) => setFormData({...formData, commissionRate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
-                />
-                <span className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">%</span>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('bookingAgents.commission_rate_label')}</label>
+                <div className="relative">
+                  <Input 
+                    type="number"
+                    placeholder="10"
+                    required
+                    className="h-11 md:h-10 pr-8"
+                    value={formData.commissionRate}
+                    onChange={(e) => setFormData({...formData, commissionRate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
+                  />
+                  <span className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">%</span>
+                </div>
               </div>
+
+              {!showMinCommission ? (
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 gap-1.5 text-xs text-primary hover:bg-primary/5 p-0"
+                  onClick={() => setShowMinCommission(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" /> {t('bookingAgents.add_min_commission')}
+                </Button>
+              ) : (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">{t('bookingAgents.min_commission_label')}</label>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6 text-slate-400 hover:text-red-500"
+                      onClick={() => {
+                        setShowMinCommission(false);
+                        setFormData({...formData, minCommission: ''});
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      placeholder="0"
+                      className="h-11 md:h-10 pr-8"
+                      value={formData.minCommission}
+                      onChange={(e) => setFormData({...formData, minCommission: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
+                    />
+                    <span className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">₪</span>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-11 md:h-10 order-2 sm:order-1">
