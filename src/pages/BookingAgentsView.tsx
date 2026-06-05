@@ -129,7 +129,7 @@ export default function BookingAgentsView() {
     <div className="space-y-6 px-1 md:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('common.bookingAgents')}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('bookingAgents.title')}</h1>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('bookingAgents.subtitle')}</p>
         </div>
         <Button onClick={() => handleOpenModal()} className="w-full sm:w-auto h-11 md:h-10 font-bold">
