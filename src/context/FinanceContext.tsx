@@ -87,7 +87,7 @@ interface FinanceContextType {
   addClient: (client: Omit<Client, 'id' | 'totalBilled'>) => Client;
   updateClient: (id: string, updates: Partial<Client>) => void;
   deleteClient: (id: string) => void;
-  addBookingAgent: (agent: Omit<BookingAgent, 'id' | 'totalCommissions'>) => BookingAgent;
+  addBookingAgent: (agent: Omit<BookingAgent, 'id' | 'totalCommissions' | 'totalPaid'>) => BookingAgent;
   updateBookingAgent: (id: string, updates: Partial<BookingAgent>) => void;
   deleteBookingAgent: (id: string) => void;
   addInvoice: (invoice: Omit<Invoice, 'id' | 'total'>) => void;

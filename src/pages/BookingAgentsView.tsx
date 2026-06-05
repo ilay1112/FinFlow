@@ -11,7 +11,6 @@ import {
   History,
   Users,
   TrendingUp,
-  MoreVertical,
   Wallet,
   Upload,
   CheckCircle2
@@ -97,7 +96,6 @@ export default function BookingAgentsView() {
   const totalCommissionsAll = bookingAgents.reduce((sum, a) => sum + a.totalCommissions, 0);
   const totalPaidAll = bookingAgents.reduce((sum, a) => sum + (a.totalPaid || 0), 0);
   const totalOutstandingAll = Math.max(0, totalCommissionsAll - totalPaidAll);
-  const topBookingAgent = [...bookingAgents].sort((a, b) => b.totalCommissions - a.totalCommissions)[0];
 
   const handleOpenModal = (bookingAgent?: BookingAgent) => {
     if (bookingAgent) {
