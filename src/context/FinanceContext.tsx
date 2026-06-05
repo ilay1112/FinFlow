@@ -23,6 +23,7 @@ export interface Expense {
   receiptStatus: 'Uploaded' | 'Missing';
   receiptName?: string;
   receiptUrl?: string;
+  bookingAgentId?: string;
 }
 
 export interface Client {
@@ -41,6 +42,7 @@ export interface BookingAgent {
   phone: string;
   commissionRate: number;
   totalCommissions: number;
+  totalPaid: number;
 }
 
 export interface InvoiceItem {
@@ -290,6 +292,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         console.error('Failed to delete receipt file from Drive:', error);
       }
     }
+
+    if (expense?.bookingAgentId) {
+      setBookingAgents(prev => prev.map(a => 
+        a.id === expense.bookingAgentId ? { ...a, totalPaid: Math.max(0, (a.totalPaid || 0) - expense.amount) } : a
+      ));
+    }
+
     setExpenses(prev => prev.filter(e => e.id !== id));
   };
 
@@ -312,8 +321,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setClients(prev => prev.filter(c => c.id !== id));
   };
 
-  const addBookingAgent = (agent: Omit<BookingAgent, 'id' | 'totalCommissions'>) => {
-    const newAgent = { ...agent, id: uuidv4(), totalCommissions: 0 };
+  const addBookingAgent = (agent: Omit<BookingAgent, 'id' | 'totalCommissions' | 'totalPaid'>) => {
+    const newAgent = { ...agent, id: uuidv4(), totalCommissions: 0, totalPaid: 0 };
     setBookingAgents(prev => [...prev, newAgent]);
     return newAgent;
   };
