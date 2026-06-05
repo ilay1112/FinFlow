@@ -74,7 +74,7 @@ export default function ProfileView() {
               <label className="text-sm font-medium">{t('profile.business_type')}</label>
               <select 
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.type}
+                value={formData.type || 'EsekPatur'}
                 onChange={(e) => setFormData({...formData, type: e.target.value as BusinessType})}
               >
                 <option value="EsekPatur">{t('profile.type_patur')}</option>

@@ -37,7 +37,14 @@ const DEFAULT_STATE: AppState = {
   categories: ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'],
   bookingAgents: [],
   taxRate: 20,
-  businessSettings: {} as BusinessSettings
+  businessSettings: {
+    name: '',
+    idNumber: '',
+    address: '',
+    phone: '',
+    email: '',
+    type: 'EsekPatur'
+  }
 };
 
 /**

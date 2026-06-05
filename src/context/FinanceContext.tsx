@@ -216,7 +216,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setBookingAgents((driveData.bookingAgents || []) as unknown as BookingAgent[]);
           setInvoices((driveData.invoices || []) as unknown as Invoice[]);
           setTaxRate(driveData.taxRate ?? 20);
-          setBusinessSettings((driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS) as unknown as BusinessSettings);
+          setBusinessSettings({
+            ...DEFAULT_BUSINESS_SETTINGS,
+            ...(driveData.businessSettings || {})
+          } as BusinessSettings);
           
           localStorage.setItem('finance_active_business', JSON.stringify(activeBusiness));
           isInitialLoad.current = false;
