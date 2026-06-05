@@ -16,7 +16,8 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronDown,
-  Plus
+  Plus,
+  Briefcase
 } from 'lucide-react';
 import { cn } from '../utils/utils';
 import { Button } from '../components/ui/Button';
@@ -63,6 +64,7 @@ export function AppLayout() {
     { name: t('common.expenses'), href: '/expenses', icon: Receipt },
     { name: t('common.invoices_receipts') || t('common.invoices'), href: '/invoices', icon: FileText },
     { name: t('common.clients'), href: '/clients', icon: Users },
+    { name: t('common.booking_agents') || 'Booking Agents', href: '/booking-agents', icon: Briefcase },
     { name: t('common.taxes'), href: '/taxes', icon: Calculator },
   ];
 

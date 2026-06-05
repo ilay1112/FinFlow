@@ -34,6 +34,15 @@ export interface Client {
   totalBilled: number;
 }
 
+export interface BookingAgent {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  commissionRate: number;
+  totalCommissions: number;
+}
+
 export interface InvoiceItem {
   id: string;
   description: string;
@@ -45,12 +54,15 @@ export interface Invoice {
   id: string;
   clientId: string;
   clientName: string;
+  bookingAgentId?: string;
+  bookingAgentName?: string;
+  commissionAmount?: number;
   date: string;
   dueDate: string;
   items: InvoiceItem[];
   taxRate: number;
   total: number;
-  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue';
+  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded';
 }
 
 interface FinanceContextType {
@@ -58,6 +70,7 @@ interface FinanceContextType {
   clients: Client[];
   invoices: Invoice[];
   categories: string[];
+  bookingAgents: BookingAgent[];
   taxRate: number;
   businessSettings: BusinessSettings;
   businesses: googleDrive.BusinessFolder[];
@@ -72,6 +85,9 @@ interface FinanceContextType {
   addClient: (client: Omit<Client, 'id' | 'totalBilled'>) => Client;
   updateClient: (id: string, updates: Partial<Client>) => void;
   deleteClient: (id: string) => void;
+  addBookingAgent: (agent: Omit<BookingAgent, 'id' | 'totalCommissions'>) => BookingAgent;
+  updateBookingAgent: (id: string, updates: Partial<BookingAgent>) => void;
+  deleteBookingAgent: (id: string) => void;
   addInvoice: (invoice: Omit<Invoice, 'id' | 'total'>) => void;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
@@ -102,6 +118,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [clients, setClients] = useState<Client[]>([]);
+  const [bookingAgents, setBookingAgents] = useState<BookingAgent[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [taxRate, setTaxRate] = useState<number>(20);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(DEFAULT_BUSINESS_SETTINGS);
@@ -124,6 +141,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const savedExpenses = localStorage.getItem('finance_expenses');
         const savedCategories = localStorage.getItem('finance_categories');
         const savedClients = localStorage.getItem('finance_clients');
+        const savedBookingAgents = localStorage.getItem('finance_booking_agents');
         const savedInvoices = localStorage.getItem('finance_invoices');
         const savedTaxRate = localStorage.getItem('finance_tax_rate');
         const savedSettings = localStorage.getItem('finance_business_settings');
@@ -132,6 +150,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
         if (savedCategories) setCategories(JSON.parse(savedCategories));
         if (savedClients) setClients(JSON.parse(savedClients));
+        if (savedBookingAgents) setBookingAgents(JSON.parse(savedBookingAgents));
         if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
         if (savedTaxRate) setTaxRate(Number(savedTaxRate));
         if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
@@ -191,6 +210,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setExpenses((driveData.expenses || []) as unknown as Expense[]);
           setCategories(driveData.categories || DEFAULT_CATEGORIES);
           setClients((driveData.clients || []) as unknown as Client[]);
+          setBookingAgents((driveData.bookingAgents || []) as unknown as BookingAgent[]);
           setInvoices((driveData.invoices || []) as unknown as Invoice[]);
           setTaxRate(driveData.taxRate ?? 20);
           setBusinessSettings((driveData.businessSettings || DEFAULT_BUSINESS_SETTINGS) as unknown as BusinessSettings);
@@ -219,6 +239,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem('finance_expenses', JSON.stringify(expenses));
       localStorage.setItem('finance_categories', JSON.stringify(categories));
       localStorage.setItem('finance_clients', JSON.stringify(clients));
+      localStorage.setItem('finance_booking_agents', JSON.stringify(bookingAgents));
       localStorage.setItem('finance_invoices', JSON.stringify(invoices));
       localStorage.setItem('finance_tax_rate', taxRate.toString());
       localStorage.setItem('finance_business_settings', JSON.stringify(businessSettings));
@@ -232,7 +253,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsSyncing(true);
         try {
           await googleDrive.saveAppState(accessToken, driveFileId.current!, {
-            expenses, categories, clients, invoices, taxRate, businessSettings
+            expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings
           });
           setSyncError(null);
         } catch (error) {
@@ -244,7 +265,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }, 1000); // Debounce saves
       return () => clearTimeout(timer);
     }
-  }, [expenses, categories, clients, invoices, taxRate, businessSettings, isAuthenticated, accessToken, activeBusiness]);
+  }, [expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings, isAuthenticated, accessToken, activeBusiness]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
     const newExpense = { ...expense, id: expense.id || uuidv4() };
@@ -291,6 +312,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setClients(prev => prev.filter(c => c.id !== id));
   };
 
+  const addBookingAgent = (agent: Omit<BookingAgent, 'id' | 'totalCommissions'>) => {
+    const newAgent = { ...agent, id: uuidv4(), totalCommissions: 0 };
+    setBookingAgents(prev => [...prev, newAgent]);
+    return newAgent;
+  };
+
+  const updateBookingAgent = (id: string, updates: Partial<BookingAgent>) => {
+    setBookingAgents(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    if (updates.name) {
+      setInvoices(prev => prev.map(inv => 
+        inv.bookingAgentId === id ? { ...inv, bookingAgentName: updates.name! } : inv
+      ));
+    }
+  };
+
+  const deleteBookingAgent = (id: string) => {
+    setBookingAgents(prev => prev.filter(a => a.id !== id));
+  };
+
   const addInvoice = (invoice: Omit<Invoice, 'id' | 'total'>) => {
     const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
     const taxAmount = subtotal * (invoice.taxRate / 100);
@@ -309,22 +349,80 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setClients(prev => prev.map(c => 
       c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
     ));
+
+    if (invoice.bookingAgentId && invoice.commissionAmount) {
+      setBookingAgents(prev => prev.map(a => 
+        a.id === invoice.bookingAgentId ? { ...a, totalCommissions: a.totalCommissions + invoice.commissionAmount! } : a
+      ));
+    }
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
+    let billedAdjustment = 0;
+    let clientId = '';
+    let commissionAdjustment = 0;
+    let agentId = '';
+
     setInvoices(prev => prev.map(inv => {
       if (inv.id === id) {
         const updated = { ...inv, ...updates };
+        clientId = inv.clientId;
+        agentId = inv.bookingAgentId || '';
+
+        // Recalculate total if items or taxRate changed
         const subtotal = updated.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
         const taxAmount = subtotal * (updated.taxRate / 100);
         updated.total = subtotal + taxAmount;
+
+        // Handle totalBilled adjustment for clients
+        // If status changed to Refunded, subtract the total
+        if (inv.status !== 'Refunded' && updated.status === 'Refunded') {
+          billedAdjustment = -updated.total;
+        } else if (inv.status === 'Refunded' && updated.status !== 'Refunded') {
+          // If status changed FROM Refunded to something else, add it back
+          billedAdjustment = updated.total;
+        } else if (inv.total !== updated.total && updated.status !== 'Refunded') {
+          // If total changed and not refunded, adjust by difference
+          billedAdjustment = updated.total - inv.total;
+        }
+
+        // Handle commission adjustment
+        if (inv.commissionAmount !== updated.commissionAmount) {
+          commissionAdjustment = (updated.commissionAmount || 0) - (inv.commissionAmount || 0);
+        }
+
         return updated;
       }
       return inv;
     }));
+
+    if (billedAdjustment !== 0 && clientId) {
+      setClients(prev => prev.map(c => 
+        c.id === clientId ? { ...c, totalBilled: c.totalBilled + billedAdjustment } : c
+      ));
+    }
+
+    if (commissionAdjustment !== 0 && agentId) {
+      setBookingAgents(prev => prev.map(a => 
+        a.id === agentId ? { ...a, totalCommissions: a.totalCommissions + commissionAdjustment } : a
+      ));
+    }
   };
 
   const deleteInvoice = (id: string) => {
+    const invoice = invoices.find(i => i.id === id);
+    if (invoice) {
+      if (invoice.status !== 'Refunded') {
+        setClients(prev => prev.map(c => 
+          c.id === invoice.clientId ? { ...c, totalBilled: Math.max(0, c.totalBilled - invoice.total) } : c
+        ));
+      }
+      if (invoice.bookingAgentId && invoice.commissionAmount) {
+        setBookingAgents(prev => prev.map(a => 
+          a.id === invoice.bookingAgentId ? { ...a, totalCommissions: Math.max(0, a.totalCommissions - invoice.commissionAmount!) } : a
+        ));
+      }
+    }
     setInvoices(prev => prev.filter(inv => inv.id !== id));
   };
 
@@ -400,10 +498,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <FinanceContext.Provider value={{ 
-      expenses, clients, invoices, categories, taxRate, businessSettings,
+      expenses, clients, invoices, categories, bookingAgents, taxRate, businessSettings,
       businesses, activeBusiness,
       isLoading, isSyncing, isInitialized, syncError,
       addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient, 
+      addBookingAgent, updateBookingAgent, deleteBookingAgent,
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
       setTaxRate: setTaxRateHandler, updateBusinessSettings, uploadReceipt,
       switchBusiness, createBusiness
