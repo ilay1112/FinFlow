@@ -175,6 +175,8 @@
     "email_label": "Email Address",
     "phone_label": "Phone Number",
     "commission_rate_label": "Default Commission Rate",
+    "min_commission_label": "Minimum Commission (optional)",
+    "add_min_commission": "Add Minimum Commission",
     "paid_amount": "Paid Amount",
     "to_pay_amount": "To Pay Amount",
     "pay_agent": "Pay Agent",

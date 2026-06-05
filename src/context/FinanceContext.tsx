@@ -41,6 +41,7 @@ export interface BookingAgent {
   email: string;
   phone: string;
   commissionRate: number;
+  minCommission?: number;
   totalCommissions: number;
   totalPaid: number;
 }
