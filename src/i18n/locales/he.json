@@ -28,6 +28,7 @@
     "dashboard": "לוח בקרה",
     "expenses": "הוצאות",
     "invoices": "חשבוניות",
+    "invoices_receipts": "חשבוניות/קבלות",
     "clients": "לקוחות",
     "taxes": "מיסים",
     "profile": "פרופיל",
@@ -48,7 +49,12 @@
     "currency": "₪",
     "total": "סה״כ",
     "continue_with": "המשך עם",
-    "syncing": "מסנכרן מול Google Drive..."
+    "syncing": "מסנכרן מול Google Drive...",
+    "workspace": "סביבת עבודה",
+    "create_workspace": "צור סביבת עבודה",
+    "workspace_name": "שם סביבת העבודה",
+    "create_and_switch": "צור והחלף",
+    "workspace_placeholder": "לדוגמה: עסק צדדי שלי"
     },
 
   "dashboard": {
@@ -72,6 +78,7 @@
     "progressive_tax_desc": "חבות המס מחושבת על בסיס מדרגות מס ההכנסה הרשמיות לשנת 2026.",
     "no_data": "אין נתונים לתקופה זו.",
     "new_receipt": "קבלה חדשה",
+    "new_invoice_receipt": "חשבונית/קבלה חדשה",
     "new_expense": "הוצאה חדשה",
     "new_client": "לקוח חדש"
   },
@@ -101,12 +108,12 @@
     "action_required": "נדרש טיפול"
   },
   "invoices": {
-    "title": "חשבוניות",
-    "subtitle": "הפקה ומעקב אחר חשבוניות לקוחות.",
-    "create_invoice": "יצירת חשבונית",
+    "title": "חשבוניות/קבלות",
+    "subtitle": "הפקה ומעקב אחר מסמכי לקוחות.",
+    "create_invoice": "חשבונית/קבלה חדשה",
     "receipt_title": "קבלה",
     "tax_invoice_title": "חשבונית מס",
-    "invoice_id": "מספר חשבונית",
+    "invoice_id": "מספר מסמך",
     "client": "לקוח",
     "dates": "תאריכים",
     "download_pdf": "הורדת PDF",
@@ -176,10 +183,11 @@
     "type_patur": "עוסק פטור",
     "type_morshe": "עוסק מורשה",
     "type_company": "חברה בע\"מ",
-    "type_help": "זה משנה את הכותרת החוקית על החשבוניות שלך (למשל, \"חשבונית מס\" לעומת \"חשבונית\").",
+    "type_help": "זה משנה את הכותרת החוקית על הקבלות שלך (למשל, \"חשבונית מס\" לעומת \"קבלה\").",
     "address": "כתובת",
     "phone": "טלפון",
     "email": "אימייל",
-    "save_success": "הפרופיל עודכן בהצלחה"
-  }
-}
+    "save_success": "הפרופיל עודכן בהצלחה",
+    "incomplete_error": "אנא השלם את פרטי הפרופיל העסקי שלך כדי להמשיך להשתמש ב-FinFlow."
+    }
+    }

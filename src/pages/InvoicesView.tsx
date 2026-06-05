@@ -187,13 +187,16 @@ export default function InvoicesView() {
       return;
     }
 
+    // Explicitly determine tax rate based strictly on the current active business settings
+    const activeTaxRate = businessSettings.type === 'EsekPatur' ? 0 : 18;
+
     const invoiceData = {
       clientId: currentClientId,
       clientName: currentClientName,
       date: formData.date,
       dueDate: formData.dueDate,
       items: formData.items,
-      taxRate: businessSettings.type === 'EsekPatur' ? 0 : 18,
+      taxRate: activeTaxRate,
       status: formData.status
     };
 
