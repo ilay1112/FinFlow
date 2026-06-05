@@ -10,7 +10,8 @@ import {
   Edit2, 
   History,
   Users,
-  TrendingUp
+  TrendingUp,
+  MoreVertical
 } from 'lucide-react';
 import { useFinance, type BookingAgent } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -46,7 +47,7 @@ export default function BookingAgentsView() {
         name: nameParam || '', 
         email: '', 
         phone: '', 
-        commissionRate: 0 
+        commissionRate: '' 
       });
       setIsModalOpen(true);
       
@@ -56,11 +57,16 @@ export default function BookingAgentsView() {
   }, [location.search]);
 
   // Form State
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+    commissionRate: number | '';
+  }>({
     name: '',
     email: '',
     phone: '',
-    commissionRate: 0
+    commissionRate: ''
   });
 
   const filteredBookingAgents = bookingAgents.filter(c => 
@@ -83,7 +89,7 @@ export default function BookingAgentsView() {
       });
     } else {
       setEditingBookingAgent(null);
-      setFormData({ name: '', email: '', phone: '', commissionRate: 0 });
+      setFormData({ name: '', email: '', phone: '', commissionRate: '' });
     }
     setIsModalOpen(true);
   };
@@ -107,10 +113,15 @@ export default function BookingAgentsView() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const dataToSubmit = {
+      ...formData,
+      commissionRate: formData.commissionRate === '' ? 0 : formData.commissionRate
+    };
+    
     if (editingBookingAgent) {
-      updateBookingAgent(editingBookingAgent.id, formData);
+      updateBookingAgent(editingBookingAgent.id, dataToSubmit);
     } else {
-      addBookingAgent(formData);
+      addBookingAgent(dataToSubmit);
     }
     setIsModalOpen(false);
   };
@@ -196,72 +207,93 @@ export default function BookingAgentsView() {
             />
           </div>
         </CardHeader>
-        <CardContent className="px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {filteredBookingAgents.map((bookingAgent) => (
-              <Card key={bookingAgent.id} className="hover:border-primary/50 transition-all duration-200 group">
-                <CardContent className="pt-4 md:pt-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-base md:text-lg group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                      {bookingAgent.name.charAt(0)}
-                    </div>
-                    <div className="flex gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
-                        onClick={() => handleOpenModal(bookingAgent)}
-                        title={t('common.edit')}
-                      >
-                        <Edit2 className="h-5 w-5 md:h-4 md:w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-red-500"
-                        onClick={() => handleOpenDeleteAlert(bookingAgent.id)}
-                        title={t('common.delete')}
-                      >
-                        <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <h3 className="text-base md:text-lg font-bold text-slate-900 mb-1 truncate">{bookingAgent.name}</h3>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs md:text-sm text-slate-500">
-                      <Mail className="h-3.5 w-3.5" />
-                      <span className="truncate">{bookingAgent.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs md:text-sm text-slate-500">
-                      <Phone className="h-3.5 w-3.5" />
-                      <span>{bookingAgent.phone}</span>
-                    </div>
-                    {bookingAgent.commissionRate > 0 && (
-                      <div className="flex items-start gap-2 text-xs md:text-sm text-slate-500">
-                        <TrendingUp className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                        <span className="line-clamp-1 md:line-clamp-2">{bookingAgent.commissionRate}% Commission</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t flex justify-between items-center">
-                    <div>
-                      <p className="text-[9px] md:text-[10px] text-slate-400 uppercase font-bold tracking-wider">{t('bookingAgents.total_commissions')}</p>
-                      <p className="text-base md:text-lg font-bold text-slate-900">{formatCurrency(bookingAgent.totalCommissions)}</p>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="h-9 md:h-8 gap-1.5 text-xs font-medium"
-                      onClick={() => handleOpenHistory(bookingAgent)}
-                    >
-                      <History className="h-3.5 w-3.5" /> {t('bookingAgents.history')}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        <CardContent className="px-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="ps-6">{t('bookingAgents.name_label')}</TableHead>
+                  <TableHead>{t('bookingAgents.email_label')}</TableHead>
+                  <TableHead>{t('bookingAgents.phone_label')}</TableHead>
+                  <TableHead>{t('bookingAgents.commission_rate_label')}</TableHead>
+                  <TableHead>{t('bookingAgents.total_commissions')}</TableHead>
+                  <TableHead className="text-end pe-6">{t('common.actions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredBookingAgents.length > 0 ? (
+                  filteredBookingAgents.map((bookingAgent) => (
+                    <TableRow key={bookingAgent.id} className="hover:bg-slate-50/50 transition-colors">
+                      <TableCell className="ps-6">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs shrink-0">
+                            {bookingAgent.name.charAt(0)}
+                          </div>
+                          <span className="font-bold text-slate-900 truncate max-w-[150px]">{bookingAgent.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 text-slate-500">
+                          <Mail className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate max-w-[150px]">{bookingAgent.email || '—'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 text-slate-500">
+                          <Phone className="h-3.5 w-3.5 shrink-0" />
+                          <span>{bookingAgent.phone || '—'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-medium">
+                          {bookingAgent.commissionRate}%
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-bold text-slate-900">{formatCurrency(bookingAgent.totalCommissions)}</span>
+                      </TableCell>
+                      <TableCell className="text-end pe-6">
+                        <div className="flex justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-slate-400 hover:text-primary"
+                            onClick={() => handleOpenHistory(bookingAgent)}
+                            title={t('bookingAgents.history')}
+                          >
+                            <History className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-slate-400 hover:text-primary"
+                            onClick={() => handleOpenModal(bookingAgent)}
+                            title={t('common.edit')}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-slate-400 hover:text-red-500"
+                            onClick={() => handleOpenDeleteAlert(bookingAgent.id)}
+                            title={t('common.delete')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-32 text-center text-slate-500 italic">
+                      {t('common.no_results') || 'No booking agents found'}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -290,7 +322,6 @@ export default function BookingAgentsView() {
                 <Input 
                   type="email" 
                   placeholder="billing@bookingAgent.com" 
-                  required 
                   className="h-11 md:h-10"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -312,9 +343,10 @@ export default function BookingAgentsView() {
                 <Input 
                   type="number"
                   placeholder="10"
+                  required
                   className="h-11 md:h-10 pr-8"
                   value={formData.commissionRate}
-                  onChange={(e) => setFormData({...formData, commissionRate: parseFloat(e.target.value) || 0})}
+                  onChange={(e) => setFormData({...formData, commissionRate: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">%</span>
               </div>
