@@ -34,7 +34,7 @@ export function CategoryManagerModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={t('expenses.manage_categories') || 'Manage Categories'}>
-      <div className="space-y-6">
+      <div className="space-y-6 touch-pan-y overflow-x-hidden">
         <form onSubmit={handleAdd} className="flex gap-2">
           <Input 
             value={newCategory}

@@ -489,7 +489,7 @@ export default function ExpensesView() {
         onClose={() => setViewingReceipt(null)}
         title={`${t('expenses.receipt')}: ${viewingReceipt?.vendor}`}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 touch-pan-y overflow-x-hidden">
           <div className="aspect-[3/4] w-full bg-slate-50 rounded-lg border overflow-hidden relative group">
             {viewingReceipt?.receiptUrl ? (
               <>
@@ -587,7 +587,7 @@ export default function ExpensesView() {
               : t('expenses.add_expense')
         }
       >
-        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
+        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">

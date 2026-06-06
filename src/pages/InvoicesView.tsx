@@ -544,7 +544,7 @@ export default function InvoicesView() {
         onClose={() => setIsModalOpen(false)} 
         title={editingInvoice ? `${t('common.edit')} ${editingInvoice.id}` : t('invoices.create_invoice')}
       >
-        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
+        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-6 pb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2 relative" ref={dropdownRef}>

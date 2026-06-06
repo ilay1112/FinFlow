@@ -412,7 +412,7 @@ export default function BookingAgentsView() {
         onClose={() => setIsModalOpen(false)} 
         title={editingBookingAgent ? t('bookingAgents.edit_bookingAgent') : t('bookingAgents.add_bookingAgent')}
       >
-        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
+        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('bookingAgents.name_label')}</label>
@@ -519,7 +519,7 @@ export default function BookingAgentsView() {
         onClose={() => setIsPayModalOpen(false)} 
         title={`${t('bookingAgents.pay_agent')}: ${selectedAgentForPayment?.name}`}
       >
-        <form onSubmit={handlePaySubmit} className="space-y-4">
+        <form onSubmit={handlePaySubmit} className="space-y-4 touch-pan-y overflow-x-hidden">
           <div className="space-y-2">
             <label className="text-sm font-medium">{t('common.amount')}</label>
             <div className="relative">
@@ -600,7 +600,7 @@ export default function BookingAgentsView() {
         title={`${t('bookingAgents.history')}: ${selectedBookingAgentForHistory?.name}`}
       >
         <div className="space-y-6">
-          <div className="max-h-[60vh] md:max-h-[70vh] overflow-y-auto px-1">
+          <div className="max-h-[60vh] md:max-h-[70vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1">
             {bookingAgentInvoices.length > 0 ? (
               <div className="w-full overflow-x-auto">
                 <Table>

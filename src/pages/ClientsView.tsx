@@ -273,7 +273,7 @@ export default function ClientsView() {
         onClose={() => setIsModalOpen(false)} 
         title={editingClient ? t('clients.edit_client') : t('clients.add_client')}
       >
-        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto px-1 scrollbar-hide">
+        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('clients.name_label')}</label>
@@ -335,7 +335,7 @@ export default function ClientsView() {
         title={`${t('clients.history')}: ${selectedClientForHistory?.name}`}
       >
         <div className="space-y-6">
-          <div className="max-h-[60vh] md:max-h-[70vh] overflow-y-auto px-1">
+          <div className="max-h-[60vh] md:max-h-[70vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1">
             {clientInvoices.length > 0 ? (
               <div className="w-full overflow-x-auto">
                 <Table>

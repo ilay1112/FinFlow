@@ -32,13 +32,13 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
 
   return (
     <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 touch-pan-y overflow-x-hidden"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 touch-pan-y overflow-x-hidden overscroll-contain"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div 
-        className="bg-background rounded-lg shadow-lg w-full max-w-lg border overflow-hidden animate-in zoom-in-95 duration-200 touch-pan-y"
+        className="bg-background rounded-lg shadow-lg w-full max-w-lg border overflow-hidden animate-in zoom-in-95 duration-200 touch-pan-y overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-6 border-b">
@@ -47,7 +47,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="p-6">
+        <div className="p-6 touch-pan-y">
           {children}
         </div>
       </div>
