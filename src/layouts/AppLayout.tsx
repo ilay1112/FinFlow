@@ -201,14 +201,73 @@ export function AppLayout() {
           </nav>
 
           <div className="p-4 border-t bg-slate-50 flex flex-col gap-3">
-            <div className="px-2">
-              <LanguageSwitcher />
+            {/* Desktop View */}
+            <div className="hidden md:flex flex-col gap-3">
+              <div className="px-2">
+                <LanguageSwitcher />
+              </div>
+
+              {isAuthenticated && (
+                <div className="space-y-3">
+                  <div className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold uppercase tracking-wider transition-all",
+                    isSyncing ? "bg-indigo-50 border-indigo-200" : 
+                    syncError ? "bg-red-50 border-red-200" : 
+                    "bg-white border-slate-200"
+                  )}>
+                    {isSyncing ? (
+                      <RefreshCw className="h-4 w-4 text-indigo-500 animate-spin" />
+                    ) : syncError ? (
+                      <CloudOff className="h-4 w-4 text-red-500" />
+                    ) : (
+                      <Cloud className="h-4 w-4 text-green-500" />
+                    )}
+                    <span className={cn(
+                      "flex-1 truncate",
+                      isSyncing ? "text-indigo-700" :
+                      syncError ? "text-red-700" : "text-slate-700"
+                    )}>
+                      {isSyncing ? 'Syncing...' : syncError ? 'Offline' : 'Drive Synced'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-3 px-1">
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={user?.picture} 
+                        alt={user?.name} 
+                        className="h-10 w-10 rounded-full border-2 border-slate-200 shadow-sm"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
+                        }}
+                      />
+                      <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-bold text-slate-900 truncate block">
+                          {user?.name}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      variant="outline"
+                      onClick={handleLogout}
+                      className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 font-bold justify-center mt-2"
+                    >
+                      <LogOut className="h-4 w-4 mr-2" /> Sign Out
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {isAuthenticated && (
-              <div className="space-y-3">
+            {/* Mobile View */}
+            <div className="md:hidden flex flex-col gap-4">
+              <div className="flex items-center justify-between px-2">
+                <LanguageSwitcher mini />
+                
                 <div className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold uppercase tracking-wider transition-all",
+                  "flex items-center justify-center h-9 w-9 rounded-xl border shadow-sm transition-all",
                   isSyncing ? "bg-indigo-50 border-indigo-200" : 
                   syncError ? "bg-red-50 border-red-200" : 
                   "bg-white border-slate-200"
@@ -220,43 +279,30 @@ export function AppLayout() {
                   ) : (
                     <Cloud className="h-4 w-4 text-green-500" />
                   )}
-                  <span className={cn(
-                    "flex-1 truncate",
-                    isSyncing ? "text-indigo-700" :
-                    syncError ? "text-red-700" : "text-slate-700"
-                  )}>
-                    {isSyncing ? 'Syncing...' : syncError ? 'Offline' : 'Drive Synced'}
-                  </span>
                 </div>
 
-                <div className="flex flex-col gap-3 px-1">
-                  <div className="flex items-center gap-3">
-                    <img 
-                      src={user?.picture} 
-                      alt={user?.name} 
-                      className="h-10 w-10 rounded-full border-2 border-slate-200 shadow-sm"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
-                      }}
-                    />
-                    <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-bold text-slate-900 truncate block">
-                        {user?.name}
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">{user?.email}</p>
-                    </div>
-                  </div>
-                  
-                  <Button 
-                    variant="outline"
-                    onClick={handleLogout}
-                    className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 font-bold justify-center mt-2"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" /> Sign Out
-                  </Button>
-                </div>
+                {isAuthenticated && (
+                  <img 
+                    src={user?.picture} 
+                    alt={user?.name} 
+                    className="h-9 w-9 rounded-full border-2 border-slate-200 shadow-sm"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
+                    }}
+                  />
+                )}
               </div>
-            )}
+              
+              {isAuthenticated && (
+                <Button 
+                  variant="outline"
+                  onClick={handleLogout}
+                  className="w-full text-red-600 border-red-200 h-10 font-bold text-xs"
+                >
+                  <LogOut className="h-3.5 w-3.5 mr-2" /> Sign Out
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </aside>
