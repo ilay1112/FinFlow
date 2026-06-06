@@ -340,19 +340,7 @@ export function AppLayout() {
                 {syncError}
               </div>
             )}
-            {isAuthenticated && (
-               <NavLink to="/profile" className="hidden md:block">
-                 <img 
-                   src={user?.picture} 
-                   alt={user?.name} 
-                   className="h-8 w-8 rounded-full border shadow-sm hover:ring-2 hover:ring-primary/20 transition-all" 
-                   onError={(e) => {
-                     (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
-                   }}
-                 />
-               </NavLink>
-            )}
-          </div>
+            </div>
         </header>
 
         <main className="flex-1 overflow-y-auto bg-slate-50/50">
