@@ -5,14 +5,23 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle, Cloud, LogOut, AlertCircle } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
+import { AlertDialog } from '../components/ui/AlertDialog';
+import { cn } from '../utils/utils';
+import { CheckCircle, Cloud, LogOut, AlertCircle, Trash2, RefreshCw } from 'lucide-react';
 
 export default function ProfileView() {
   const { t } = useTranslation();
-  const { businessSettings, updateBusinessSettings } = useFinance();
+  const { businessSettings, activeBusiness, updateBusinessSettings, deleteBusiness, isLoading } = useFinance();
   const { user, isAuthenticated, logout, login } = useAuth();
   const [formData, setFormData] = useState<BusinessSettings>(businessSettings);
   const [isSaved, setIsSaved] = useState(false);
+
+  // Delete State
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+  const [isDeleteVerifyModalOpen, setIsDeleteVerifyModalOpen] = useState(false);
+  const [deleteVerificationText, setDeleteVerificationText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Check if profile is incomplete (forced onboarding state)
   const isProfileIncomplete = !businessSettings.name;
@@ -30,8 +39,38 @@ export default function ProfileView() {
     setTimeout(() => setIsSaved(false), 3000);
   };
 
+  const handleDeleteInitial = () => {
+    setIsDeleteAlertOpen(true);
+  };
+
+  const handleConfirmInitialDelete = () => {
+    setIsDeleteAlertOpen(false);
+    setDeleteVerificationText('');
+    setDeleteError(null);
+    setIsDeleteVerifyModalOpen(true);
+  };
+
+  const handleFinalDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBusiness) return;
+
+    const verifyWord = t('profile.delete_verify_word');
+    const expectedText = `${verifyWord} ${activeBusiness.name}`;
+    if (deleteVerificationText.trim().toLowerCase() !== expectedText.toLowerCase()) {
+      setDeleteError(t('profile.delete_verify_error'));
+      return;
+    }
+
+    try {
+      await deleteBusiness(activeBusiness.id);
+      setIsDeleteVerifyModalOpen(false);
+    } catch (error) {
+      setDeleteError('An unexpected error occurred during deletion.');
+    }
+  };
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-12">
       {isProfileIncomplete && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
           <AlertCircle className="h-5 w-5 shrink-0" />
@@ -112,14 +151,29 @@ export default function ProfileView() {
               </div>
             </div>
 
-            <div className="pt-4 flex items-center gap-4">
-              <Button type="submit" className="px-8">
-                {t('common.save')}
-              </Button>
-              {isSaved && (
-                <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
-                  <CheckCircle className="h-4 w-4" /> {t('profile.save_success')}
-                </span>
+            <div className="pt-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <Button type="submit" className="px-8" disabled={isLoading}>
+                  {t('common.save')}
+                </Button>
+                {isSaved && (
+                  <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
+                    <CheckCircle className="h-4 w-4" /> {t('profile.save_success')}
+                  </span>
+                )}
+              </div>
+              
+              {!isProfileIncomplete && activeBusiness && (
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 gap-2"
+                  onClick={handleDeleteInitial}
+                  disabled={isLoading}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('profile.delete_business')}
+                </Button>
               )}
             </div>
           </form>
@@ -167,6 +221,75 @@ export default function ProfileView() {
           </CardContent>
         )}
       </Card>
+
+      {/* Delete Confirmation Dialog 1 */}
+      <AlertDialog
+        isOpen={isDeleteAlertOpen}
+        onClose={() => setIsDeleteAlertOpen(false)}
+        onConfirm={handleConfirmInitialDelete}
+        title={t('profile.delete_confirm_title')}
+        description={t('profile.delete_confirm_desc')}
+        confirmText={t('profile.delete_continue')}
+        cancelText={t('common.cancel')}
+        variant="destructive"
+      />
+
+      {/* Delete Confirmation Modal 2 (Text Verification) */}
+      <Modal
+        isOpen={isDeleteVerifyModalOpen}
+        onClose={() => setIsDeleteVerifyModalOpen(false)}
+        title={t('profile.delete_confirm_title')}
+      >
+        <form onSubmit={handleFinalDelete} className="space-y-4">
+          <div className="bg-red-50 p-4 rounded-lg border border-red-100 flex gap-3">
+            <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <p className="text-sm text-red-800 leading-relaxed font-medium">
+              {t('profile.delete_confirm_desc')}
+            </p>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <label className="text-sm font-bold text-slate-700">
+              {t('profile.delete_verify_label', { word: t('profile.delete_verify_word'), name: activeBusiness?.name })}
+            </label>
+            <Input
+              value={deleteVerificationText}
+              onChange={(e) => {
+                setDeleteVerificationText(e.target.value);
+                setDeleteError(null);
+              }}
+              placeholder={`${t('profile.delete_verify_word')} ${activeBusiness?.name}`}
+              className={cn("h-11 border-2", deleteError ? "border-red-500 bg-red-50" : "focus:border-primary")}
+              autoFocus
+            />
+            {deleteError && (
+              <p className="text-xs font-bold text-red-600 animate-in fade-in slide-in-from-top-1">
+                {deleteError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setIsDeleteVerifyModalOpen(false)}
+              className="h-11 md:h-10 order-2 sm:order-1"
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button 
+              type="submit" 
+              variant="destructive"
+              className="h-11 md:h-10 px-8 order-1 sm:order-2 font-bold"
+              disabled={isLoading || !deleteVerificationText}
+            >
+              {isLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('profile.delete_business')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

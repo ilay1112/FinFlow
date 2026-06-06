@@ -213,6 +213,13 @@
     "address": "כתובת",
     "phone": "טלפון",
     "email": "אימייל",
+    "delete_business": "מחיקת סביבת עבודה",
+    "delete_confirm_title": "למחוק את סביבת העבודה לצמיתות?",
+    "delete_confirm_desc": "פעולה זו תמחק את כל הנתונים הקשורים לסביבת עבודה זו מחשבון ה-Google Drive שלך, כולל כל המסמכים, ההוצאות והקבלות. לא ניתן לבטל פעולה זו.",
+    "delete_continue": "המשך",
+    "delete_verify_word": "למחוק",
+    "delete_verify_label": "לאישור המחיקה, הקלד \"{{word}} {{name}}\" למטה:",
+    "delete_verify_error": "טקסט האישור אינו תואם. אנא נסה שוב.",
     "save_success": "הפרופיל עודכן בהצלחה",
     "incomplete_error": "אנא השלם את פרטי הפרופיל העסקי שלך כדי להמשיך להשתמש ב-FinFlow."
   }

@@ -213,6 +213,13 @@
     "address": "Address",
     "phone": "Phone",
     "email": "Email",
+    "delete_business": "Delete Workspace",
+    "delete_confirm_title": "Delete Workspace Permanentely?",
+    "delete_confirm_desc": "This will delete all data related to this workspace from your Google Drive, including all invoices, expenses, and receipts. This action cannot be undone.",
+    "delete_continue": "Continue",
+    "delete_verify_word": "delete",
+    "delete_verify_label": "To confirm, type \"{{word}} {{name}}\" below:",
+    "delete_verify_error": "The confirmation text does not match. Please try again.",
     "save_success": "Profile updated successfully",
     "incomplete_error": "Please complete your business profile to continue using FinFlow."
   }

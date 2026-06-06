@@ -101,6 +101,7 @@ interface FinanceContextType {
   uploadReceipt: (file: File, expenseId: string, metadata?: { vendor: string; date: string }) => Promise<void>;
   switchBusiness: (businessId: string) => void;
   createBusiness: (name: string) => Promise<void>;
+  deleteBusiness: (businessId: string) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -527,6 +528,37 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const deleteBusiness = async (businessId: string) => {
+    if (!isAuthenticated || !accessToken) return;
+    setIsLoading(true);
+    try {
+      await googleDrive.deleteFile(accessToken, businessId);
+      
+      const updatedBusinesses = businesses.filter(b => b.id !== businessId);
+      setBusinesses(updatedBusinesses);
+      
+      if (activeBusiness?.id === businessId) {
+        if (updatedBusinesses.length > 0) {
+          setActiveBusiness(updatedBusinesses[0]);
+        } else {
+          setActiveBusiness(null);
+          // Reset state
+          setExpenses([]);
+          setClients([]);
+          setBookingAgents([]);
+          setInvoices([]);
+          setBusinessSettings(DEFAULT_BUSINESS_SETTINGS);
+          localStorage.removeItem('finance_active_business');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete business:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <FinanceContext.Provider value={{ 
       expenses, clients, invoices, categories, bookingAgents, taxRate, businessSettings,
@@ -536,7 +568,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       addBookingAgent, updateBookingAgent, deleteBookingAgent,
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
       setTaxRate: setTaxRateHandler, updateBusinessSettings, uploadReceipt,
-      switchBusiness, createBusiness
+      switchBusiness, createBusiness, deleteBusiness
     }}>
       {children}
     </FinanceContext.Provider>
