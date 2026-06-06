@@ -12,12 +12,36 @@ FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accoun
 - **Security**: Authentication is handled via Google OAuth 2.0 with restricted file-level permissions (`drive.file` scope). FinFlow can *only* access the files it creates.
 
 ## ✨ Key Features
-- **📊 Real-time Dashboard**: Revenue vs. Expense tracking with interactive Recharts analytics.
-- **🧾 Intelligent Expense Logging**: Snap or upload receipts directly to the cloud.
-- **📝 Professional Invoicing**: High-fidelity PDF generation with perfect RTL (Hebrew) support and dynamic legal titles (**Receipt** vs **Tax Invoice**).
-- **🌍 Bi-lingual & Bi-directional**: Full support for English (LTR) and Hebrew (RTL) with persistent language selection.
-- **💾 Offline-First**: Uses `localStorage` for immediate responsiveness, with background synchronization to Google Drive.
-- **📱 Native Mobile Support**: Fully cross-platform with CapacitorJS integration.
+
+### 🏢 Multi-Business Support
+- **Workspace Management**: Manage multiple business profiles under a single Google account.
+- **Instant Switching**: Seamlessly switch between different businesses with isolated data and settings.
+- **Secure Deletion**: Fully delete a workspace and all its associated data from Google Drive with two-step verification.
+
+### 📊 Real-time Dashboard
+- **Financial Analytics**: Revenue vs. Expense tracking with interactive Recharts.
+- **Performance Metrics**: Monitor net profit, tax liability estimates, and monthly growth at a glance.
+- **Quick Actions**: One-tap access to create invoices, log expenses, or add clients.
+
+### 🧾 Comprehensive Expense Management
+- **Smart Tracking**: Log expenses by vendor and category with support for tax-deductible marking.
+- **Cloud Receipts**: Snap or upload receipts directly to your Google Drive. Files are automatically organized by business and year.
+- **Integrated Payments**: Link expenses directly to booking agent payouts for accurate financial history.
+
+### 📝 Professional Invoicing & Documents
+- **High-Fidelity PDF**: Professional document generation with pixel-perfect RTL (Hebrew) support.
+- **Dynamic Legal Logic**: Automatically handles legal titles (**Receipt** vs **Tax Invoice**) based on business type (**Esek Patur** vs **Esek Morshe**).
+- **Flexible Items**: Manage line items with responsive pricing and automated tax/subtotal calculations.
+
+### 🤝 Booking Agent Management
+- **Commission Tracking**: Automated commission calculations with support for custom rates and **Minimum Commission** thresholds.
+- **Debt Management**: Track **Paid** vs **To Pay** amounts for each agent in real-time.
+- **Flexible Payouts**: Mark debt as paid with custom amounts and direct receipt uploads, automatically generating corresponding expense entries.
+
+### 🌍 Optimized User Experience
+- **Bilingual & RTL**: Native support for English (LTR) and Hebrew (RTL) with automatic UI realignment.
+- **Mobile-First Design**: Optimized for small screens with responsive tables, compact sidebars, and iOS Safari compatibility (preventing auto-zoom).
+- **Offline-First**: Immediate responsiveness using `localStorage` with robust background synchronization to Drive.
 
 ## 🛠️ Tech Stack
 - **Framework**: React 19 (Vite)
