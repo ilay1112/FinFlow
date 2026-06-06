@@ -9,7 +9,6 @@ import {
   Calculator, 
   Menu,
   CreditCard,
-  X,
   LogOut,
   Cloud,
   CloudOff,
@@ -170,15 +169,6 @@ export function AppLayout() {
                 </div>
               </div>
             )}
-            
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="md:hidden absolute top-4 right-4" 
-              onClick={() => setIsSidebarOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </Button>
           </div>
 
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
