@@ -123,8 +123,17 @@ export default function DashboardView() {
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
   const prevTotalExpenses = prevExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-  const netProfit = currentRevenue - totalExpenses;
-  const prevNetProfit = prevRevenue - prevTotalExpenses;
+  // Consider all booking agent commissions as an expense against the net profit
+  const totalAgentCommissions = invoices
+    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start, end }))
+    .reduce((sum, i) => sum + (i.commissionAmount || 0), 0);
+    
+  const prevTotalAgentCommissions = invoices
+    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start: prevStart, end: prevEnd }))
+    .reduce((sum, i) => sum + (i.commissionAmount || 0), 0);
+
+  const netProfit = currentRevenue - totalExpenses - totalAgentCommissions;
+  const prevNetProfit = prevRevenue - prevTotalExpenses - prevTotalAgentCommissions;
 
   // Esek Zair Normative Deduction (30% of revenue)
   const taxableIncome = currentRevenue - (currentRevenue * 0.30);
