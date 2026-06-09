@@ -21,6 +21,7 @@ import { Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { cn } from '../utils/utils';
+import { SEO } from '../components/SEO';
 
 export default function LoginView() {
   const { t, i18n } = useTranslation();
@@ -66,6 +67,7 @@ export default function LoginView() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col" dir={isRtl ? 'rtl' : 'ltr'}>
+      <SEO />
       {/* Header */}
       <header className="h-16 bg-white border-b flex items-center justify-between px-6 md:px-12 sticky top-0 z-50">
         <div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { AppLayout } from './layouts/AppLayout';
@@ -125,13 +126,15 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <FinanceProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </FinanceProvider>
-      </AuthProvider>
+      <HelmetProvider>
+        <AuthProvider>
+          <FinanceProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </FinanceProvider>
+        </AuthProvider>
+      </HelmetProvider>
     </ErrorBoundary>
   );
 }
