@@ -237,7 +237,10 @@ export function AppLayout() {
                     <div className="flex items-center gap-3">
                       <img 
                         src={user?.picture} 
-                        alt={user?.name} 
+                        alt={user?.name || "User Avatar"}
+                        width="40"
+                        height="40"
+                        loading="lazy"
                         className="h-10 w-10 rounded-full border-2 border-slate-200 shadow-sm"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;
@@ -286,7 +289,10 @@ export function AppLayout() {
                 {isAuthenticated && (
                   <img 
                     src={user?.picture} 
-                    alt={user?.name} 
+                    alt={user?.name || "User Avatar"} 
+                    width="36"
+                    height="36"
+                    loading="lazy"
                     className="h-9 w-9 rounded-full border-2 border-slate-200 shadow-sm"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=random`;

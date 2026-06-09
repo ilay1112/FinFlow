@@ -23,7 +23,10 @@ export function LanguageSwitcher({ mini = false }: { mini?: boolean }) {
       <div className="flex items-center gap-2">
         <img 
           src={i18n.language === 'he' ? "https://flagcdn.com/w40/il.png" : "https://flagcdn.com/w40/us.png"} 
-          alt={i18n.language === 'he' ? "Israel" : "USA"}
+          alt={i18n.language === 'he' ? "Israel flag" : "USA flag"}
+          width="20"
+          height="14"
+          loading="eager"
           className="h-3.5 w-auto rounded-sm shadow-sm"
         />
         {!mini && (
