@@ -94,7 +94,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
         businessName: businessSettings.name,
         accessToken: token,
       });
-      updateInvoice(invoice.id, { status: 'Sent', sentAt: new Date().toISOString() });
+      updateInvoice(invoice.id, { sentAt: new Date().toISOString() });
       setStep('done');
     } catch (err: any) {
       if (err.message === 'SCOPE_DENIED') {
@@ -119,7 +119,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
         businessName: businessSettings.name,
         businessType: businessSettings.type,
       });
-      updateInvoice(invoice.id, { status: 'Sent', sentAt: new Date().toISOString() });
+      updateInvoice(invoice.id, { sentAt: new Date().toISOString() });
       setStep('done');
     } catch (err: any) {
       setErrorMsg(err.message || t('invoices.send_error'));
