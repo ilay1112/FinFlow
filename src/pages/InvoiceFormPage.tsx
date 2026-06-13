@@ -276,29 +276,18 @@ export default function InvoiceFormPage() {
           </div>
 
           {/* Document Type */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.document_type')}</label>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ['TaxInvoice',        t('invoices.doc_tax_invoice')],
-                ['Receipt',           t('invoices.doc_receipt')],
-                ['TaxInvoiceReceipt', t('invoices.doc_tax_invoice_receipt')],
-                ['TransactionInvoice',t('invoices.doc_transaction_invoice')],
-              ] as [DocumentType, string][]).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, documentType: value })}
-                  className={`h-11 rounded-xl border-2 text-sm font-bold transition-all ${
-                    formData.documentType === value
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <select
+              className="flex h-12 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={formData.documentType}
+              onChange={(e) => setFormData({ ...formData, documentType: e.target.value as DocumentType })}
+            >
+              <option value="TaxInvoice">{t('invoices.doc_tax_invoice')}</option>
+              <option value="Receipt">{t('invoices.doc_receipt')}</option>
+              <option value="TaxInvoiceReceipt">{t('invoices.doc_tax_invoice_receipt')}</option>
+              <option value="TransactionInvoice">{t('invoices.doc_transaction_invoice')}</option>
+            </select>
           </div>
 
           {/* Status + Date — side by side on mobile too */}
