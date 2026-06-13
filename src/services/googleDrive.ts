@@ -3,6 +3,7 @@ import type { Expense, Client, Invoice, BusinessSettings, BookingAgent } from '.
 const ROOT_FOLDER_NAME = 'FinFlow Data';
 const APP_DATA_FILENAME = 'app_data.json';
 const RECEIPTS_FOLDER_NAME = 'Business App Receipts';
+const INVOICES_FOLDER_NAME = 'Invoices';
 
 export interface AppState {
   expenses: Expense[];
@@ -227,6 +228,38 @@ async function setPublicPermission(token: string, fileId: string): Promise<void>
   if (!response.ok) {
     console.warn('Failed to set public permission on file:', fileId);
   }
+}
+
+/**
+ * Uploads a PDF blob to the "Invoices" folder inside the business folder.
+ * Returns the shareable Drive URL.
+ */
+export async function uploadInvoicePDF(token: string, invoiceId: string, pdfBlob: Blob, businessFolderId: string): Promise<string> {
+  let invoicesFolderId = await findFileId(token, INVOICES_FOLDER_NAME, true, businessFolderId);
+  if (!invoicesFolderId) {
+    invoicesFolderId = await createFile(token, INVOICES_FOLDER_NAME, null, true, businessFolderId);
+  }
+
+  const filename = `invoice_${invoiceId}.pdf`;
+  const fileMetadata = { name: filename, parents: [invoicesFolderId] };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+  form.append('file', pdfBlob, filename);
+
+  const response = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form }
+  );
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`Failed to upload invoice PDF: ${err.error?.message || response.status}`);
+  }
+
+  const data: DriveFile = await response.json();
+  if (data.id) await setPublicPermission(token, data.id);
+  return data.webViewLink || '';
 }
 
 /**

@@ -66,6 +66,8 @@ export interface Invoice {
   taxRate: number;
   total: number;
   status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded';
+  pdfUrl?: string;
+  sentAt?: string;
 }
 
 interface FinanceContextType {

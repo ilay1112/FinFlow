@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   FileDown,
   Loader2,
-  RotateCcw
+  RotateCcw,
+  Mail,
 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
 import { generateInvoicePDF } from '../services/pdf/invoice-service';
@@ -24,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
+import { SendInvoiceModal } from '../components/SendInvoiceModal';
 
 export default function InvoicesView() {
   const { t, i18n } = useTranslation();
@@ -35,6 +37,7 @@ export default function InvoicesView() {
   const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
   const [invoiceToRefund, setInvoiceToRefund] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sendInvoice, setSendInvoice] = useState<Invoice | null>(null);
 
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -259,9 +262,18 @@ export default function InvoicesView() {
                       <TableCell className="whitespace-nowrap">{getStatusBadge(invoice.status)}</TableCell>
                       <TableCell className="text-end pe-6">
                         <div className="flex justify-end gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-blue-600"
+                            onClick={() => setSendInvoice(invoice)}
+                            title={t('invoices.send_invoice')}
+                          >
+                            <Mail className="h-5 w-5 md:h-4 md:w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
                             disabled={isGeneratingPDF}
                             onClick={() => handleDownloadPDF(invoice)}
@@ -335,8 +347,13 @@ export default function InvoicesView() {
         variant="destructive"
       />
 
+      {/* Send Invoice Modal */}
+      {sendInvoice && (
+        <SendInvoiceModal invoice={sendInvoice} onClose={() => setSendInvoice(null)} />
+      )}
+
       {/* Hidden Portal for PDF Generation */}
-      <div 
+      <div
         style={{ position: 'absolute', left: '-10000px', top: '-10000px', zIndex: -100 }}
       >
         <div id="invoice-template-portal">

@@ -1,0 +1,228 @@
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Mail, MessageCircle, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { useFinance, type Invoice } from '../context/FinanceContext';
+import { authService } from '../services/auth';
+import { generateInvoicePDFBlob } from '../services/pdf/invoice-service';
+import { uploadInvoicePDF } from '../services/googleDrive';
+import { sendInvoiceEmail } from '../services/gmail';
+import { shareInvoice } from '../services/share';
+import { InvoiceTemplate } from '../services/pdf/InvoiceTemplate';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+
+interface Props {
+  invoice: Invoice;
+  onClose: () => void;
+}
+
+type Step = 'idle' | 'generating' | 'uploading' | 'sending' | 'done' | 'error';
+
+const TEMPLATE_ID = 'send-invoice-template-portal';
+const TEMPLATE_RENDER_DELAY = 200;
+
+export function SendInvoiceModal({ invoice, onClose }: Props) {
+  const { t, i18n } = useTranslation();
+  const { clients, businessSettings, activeBusiness, updateInvoice } = useFinance();
+
+  const client = clients.find(c => c.id === invoice.clientId);
+  const [email, setEmail] = useState(client?.email || '');
+  const [phone, setPhone] = useState(client?.phone || '');
+  const [step, setStep] = useState<Step>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', {
+      style: 'currency',
+      currency: 'ILS',
+    }).format(value);
+
+  useEffect(() => {
+    if (client) {
+      setEmail(client.email || '');
+      setPhone(client.phone || '');
+    }
+  }, [client?.id]);
+
+  const stepLabel = () => {
+    if (step === 'generating') return t('invoices.generating_pdf');
+    if (step === 'uploading') return t('invoices.uploading_pdf');
+    if (step === 'sending') return t('invoices.sending');
+    return '';
+  };
+
+  async function getPDFAndDriveUrl(): Promise<{ pdfBlob: Blob; driveUrl: string }> {
+    setStep('generating');
+    await new Promise(r => setTimeout(r, TEMPLATE_RENDER_DELAY));
+
+    const pdfBlob = await generateInvoicePDFBlob(TEMPLATE_ID);
+    if (!pdfBlob) throw new Error('PDF generation failed');
+
+    setStep('uploading');
+    const token = await authService.getValidAccessToken();
+    const folderId = activeBusiness?.id;
+    if (!folderId) throw new Error('No active business folder');
+
+    // Reuse existing pdfUrl to skip re-upload
+    if (invoice.pdfUrl) {
+      return { pdfBlob, driveUrl: invoice.pdfUrl };
+    }
+
+    const driveUrl = await uploadInvoicePDF(token, invoice.id, pdfBlob, folderId);
+    updateInvoice(invoice.id, { pdfUrl: driveUrl });
+    return { pdfBlob, driveUrl };
+  }
+
+  async function handleSendEmail() {
+    if (!email.trim()) return;
+    setErrorMsg('');
+    try {
+      const { pdfBlob, driveUrl } = await getPDFAndDriveUrl();
+      setStep('sending');
+      const token = await authService.getValidAccessToken();
+      await sendInvoiceEmail({
+        to: email.trim(),
+        invoiceId: invoice.id,
+        items: invoice.items,
+        taxRate: invoice.taxRate,
+        total: formatCurrency(invoice.total),
+        date: invoice.date,
+        dueDate: invoice.dueDate,
+        pdfBlob,
+        driveUrl,
+        businessName: businessSettings.name,
+        accessToken: token,
+      });
+      updateInvoice(invoice.id, { status: 'Sent', sentAt: new Date().toISOString() });
+      setStep('done');
+    } catch (err: any) {
+      if (err.message === 'SCOPE_DENIED') {
+        setErrorMsg(t('invoices.scope_error'));
+      } else {
+        setErrorMsg(err.message || t('invoices.send_error'));
+      }
+      setStep('error');
+    }
+  }
+
+  async function handleShareWhatsApp() {
+    setErrorMsg('');
+    try {
+      const { pdfBlob, driveUrl } = await getPDFAndDriveUrl();
+      setStep('sending');
+      await shareInvoice({ invoice, clientPhone: phone, driveUrl, pdfBlob });
+      updateInvoice(invoice.id, { status: 'Sent', sentAt: new Date().toISOString() });
+      setStep('done');
+    } catch (err: any) {
+      setErrorMsg(err.message || t('invoices.send_error'));
+      setStep('error');
+    }
+  }
+
+  const isBusy = step === 'generating' || step === 'uploading' || step === 'sending';
+
+  return (
+    <Modal isOpen title={t('invoices.send_invoice')} onClose={onClose}>
+      {/* Hidden template for PDF capture — always rendered while modal is open */}
+      <div style={{ position: 'absolute', left: '-10000px', top: '-10000px', zIndex: -1 }}>
+        <div id={TEMPLATE_ID}>
+          <InvoiceTemplate invoice={invoice} business={businessSettings} />
+        </div>
+      </div>
+
+      {step === 'done' ? (
+        <div className="flex flex-col items-center gap-4 py-6 text-center">
+          <div className="bg-green-100 p-4 rounded-full">
+            <CheckCircle className="h-10 w-10 text-green-600" />
+          </div>
+          <div>
+            <p className="text-lg font-bold text-slate-900">{t('invoices.send_success')}</p>
+            <p className="text-sm text-slate-500 mt-1">{invoice.id} → {email || phone}</p>
+          </div>
+          <Button className="w-full h-12" onClick={onClose}>{t('common.close')}</Button>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {/* Invoice summary chip */}
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{invoice.clientName}</p>
+              <p className="text-xl font-black text-primary mt-0.5">{formatCurrency(invoice.total)}</p>
+            </div>
+            <p className="text-sm font-mono text-slate-400">{invoice.id}</p>
+          </div>
+
+          {/* Email field */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              {t('invoices.recipient_email')}
+            </label>
+            <Input
+              type="email"
+              placeholder="client@example.com"
+              className="h-12"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              disabled={isBusy}
+            />
+          </div>
+
+          {/* Phone field */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              {t('invoices.recipient_phone')}
+            </label>
+            <Input
+              type="tel"
+              placeholder="+972501234567"
+              className="h-12"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              disabled={isBusy}
+            />
+          </div>
+
+          {/* Error message */}
+          {step === 'error' && errorMsg && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+              <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-700">{errorMsg}</p>
+            </div>
+          )}
+
+          {/* Loading label */}
+          {isBusy && (
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{stepLabel()}</span>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex flex-col gap-3 pt-1">
+            <Button
+              className="h-12 font-bold gap-2"
+              onClick={handleSendEmail}
+              disabled={isBusy || !email.trim()}
+            >
+              <Mail className="h-4 w-4" />
+              {t('invoices.send_via_email')}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-12 font-bold gap-2 border-green-500 text-green-700 hover:bg-green-50"
+              onClick={handleShareWhatsApp}
+              disabled={isBusy}
+            >
+              <MessageCircle className="h-4 w-4" />
+              {t('invoices.send_via_whatsapp')}
+            </Button>
+          </div>
+
+          <p className="text-[11px] text-center text-slate-400">{t('invoices.send_invoice_subtitle')}</p>
+        </div>
+      )}
+    </Modal>
+  );
+}

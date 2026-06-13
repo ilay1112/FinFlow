@@ -58,10 +58,11 @@ export const authService = {
         provider: 'google',
         options: {
           scopes: [
-            'openid', // Added for better stability
+            'openid',
             'email',
             'profile',
-            'https://www.googleapis.com/auth/drive.file'
+            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/gmail.send',
           ],
           // Platform-specific options
           ...(isNative ? {
@@ -136,6 +137,36 @@ export const authService = {
     } catch (error) {
       console.error('Logout Error:', error);
     }
+  },
+
+  /**
+   * Returns a valid access token, refreshing via the plugin if the cached one is expired.
+   */
+  async getValidAccessToken(): Promise<string> {
+    try {
+      const expiry = localStorage.getItem('auth_expiry');
+      const token = localStorage.getItem('auth_token');
+      // If token is valid for at least 2 more minutes, return it directly
+      if (token && expiry && Date.now() < Number(expiry) - 120_000) {
+        return token;
+      }
+      // Attempt a silent refresh via the plugin
+      const refreshed = await (SocialLogin as any).refresh?.({ provider: 'google' });
+      if (refreshed?.accessToken) {
+        const newToken = typeof refreshed.accessToken === 'object'
+          ? refreshed.accessToken.token
+          : refreshed.accessToken;
+        localStorage.setItem('auth_token', newToken);
+        localStorage.setItem('auth_expiry', (Date.now() + 3600 * 1000).toString());
+        return newToken;
+      }
+      if (token) return token;
+    } catch (e) {
+      console.warn('Token refresh failed, using cached token:', e);
+      const token = localStorage.getItem('auth_token');
+      if (token) return token;
+    }
+    throw new Error('No valid access token. Please sign in again.');
   },
 
   /**

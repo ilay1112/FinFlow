@@ -140,7 +140,21 @@
     "tax": "Tax",
     "refund": "Refund",
     "refund_title": "Refund Receipt",
-    "refund_description": "Are you sure you want to refund this receipt? The status will be updated to Refunded and the amount will be subtracted from your total revenue."
+    "refund_description": "Are you sure you want to refund this receipt? The status will be updated to Refunded and the amount will be subtracted from your total revenue.",
+    "send_invoice": "Send Invoice",
+    "send_invoice_subtitle": "Send invoice to your client by email or WhatsApp",
+    "send_via_email": "Send via Email",
+    "send_via_whatsapp": "Share via WhatsApp",
+    "recipient_email": "Recipient Email",
+    "recipient_phone": "Phone (optional)",
+    "sending": "Sending...",
+    "uploading_pdf": "Uploading PDF...",
+    "generating_pdf": "Generating PDF...",
+    "send_success": "Invoice sent successfully",
+    "send_email_success": "Email sent successfully",
+    "share_success": "Invoice shared",
+    "scope_error": "Gmail permission not granted. Please sign out and sign in again to allow email access.",
+    "send_error": "Failed to send invoice. Please try again."
   },
   "clients": {
     "subtitle": "Manage your customer database and billing history.",
