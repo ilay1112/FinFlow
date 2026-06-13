@@ -24,14 +24,14 @@ export const generateInvoicePDF = async (
     // 1. Capture the element to canvas
     // We use a high scale for print quality (2.0+)
     const canvas = await html2canvas(element, {
-      scale: 2,
+      scale: 2.0,
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff'
     });
 
-    const imgData = canvas.toDataURL('image/png');
-    
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
     // 2. Create jsPDF document (A4)
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -44,7 +44,7 @@ export const generateInvoicePDF = async (
     const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
     // 3. Add the image to the PDF
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
     
     // 4. Trigger download
     pdf.save(`invoice_${invoice.id}.pdf`);
