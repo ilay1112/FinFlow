@@ -1,68 +1,40 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { 
-  Plus, 
-  Send, 
-  CheckCircle, 
-  Clock, 
-  Search, 
-  Trash2, 
-  Edit2, 
-  X, 
+import {
+  Plus,
+  Send,
+  CheckCircle,
+  Clock,
+  Search,
+  Trash2,
+  Edit2,
   DollarSign,
   AlertTriangle,
   FileDown,
   Loader2,
-  UserPlus,
-  ArrowRight,
-  Briefcase,
   RotateCcw
 } from 'lucide-react';
-import { useFinance, type Invoice, type InvoiceItem } from '../context/FinanceContext';
+import { useFinance, type Invoice } from '../context/FinanceContext';
 import { generateInvoicePDF } from '../services/pdf/invoice-service';
 import { InvoiceTemplate } from '../services/pdf/InvoiceTemplate';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import { Badge } from '../components/ui/Badge';
-import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
 
-interface InvoiceFormData {
-  clientId: string;
-  bookingAgentId?: string;
-  commissionAmount?: number;
-  date: string;
-  dueDate: string;
-  items: (Omit<InvoiceItem, 'unitPrice'> & { unitPrice: number | '' })[];
-  taxRate: number;
-  status: Invoice['status'];
-}
-
 export default function InvoicesView() {
   const { t, i18n } = useTranslation();
-  const { invoices, clients, bookingAgents, addInvoice, updateInvoice, deleteInvoice, businessSettings } = useFinance();
+  const { invoices, updateInvoice, deleteInvoice, businessSettings } = useFinance();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [isRefundAlertOpen, setIsRefundAlertOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
   const [invoiceToRefund, setInvoiceToRefund] = useState<Invoice | null>(null);
-  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Client Search State
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  
-  // Booking Agent Search State
-  const [agentSearchTerm, setAgentSearchTerm] = useState('');
-  const [isAgentDropdownOpen, setIsAgentDropdownOpen] = useState(false);
-  const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -72,62 +44,13 @@ export default function InvoicesView() {
     const params = new URLSearchParams(location.search);
     const action = params.get('action');
     if (action === 'new') {
-      handleOpenModal();
-      // Remove the parameter after opening
-      navigate(location.pathname, { replace: true });
+      navigate('/invoices/new', { replace: true });
     }
   }, [location.search]);
-
-  // Click outside listener for dropdowns
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsClientDropdownOpen(false);
-      }
-      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target as Node)) {
-        setIsAgentDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Filtered clients for search
-  const filteredSearchClients = useMemo(() => {
-    if (!clientSearchTerm) return clients.slice(0, 5);
-    return clients.filter(c => 
-      c.name.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
-      c.email.toLowerCase().includes(clientSearchTerm.toLowerCase())
-    ).slice(0, 5);
-  }, [clients, clientSearchTerm]);
-
-  // Filtered agents for search
-  const filteredSearchAgents = useMemo(() => {
-    if (!agentSearchTerm) return bookingAgents.slice(0, 5);
-    return bookingAgents.filter(a => 
-      a.name.toLowerCase().includes(agentSearchTerm.toLowerCase()) ||
-      a.email.toLowerCase().includes(agentSearchTerm.toLowerCase())
-    ).slice(0, 5);
-  }, [bookingAgents, agentSearchTerm]);
 
   // PDF Generation State
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [pdfInvoice, setPdfInvoice] = useState<Invoice | null>(null);
-  
-  // Form State
-  const [formData, setFormData] = useState<InvoiceFormData>(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return {
-      clientId: '',
-      bookingAgentId: '',
-      commissionAmount: 0,
-      date: today,
-      dueDate: today,
-      items: [{ id: '1', description: '', quantity: 1, unitPrice: '' }],
-      taxRate: 0,
-      status: 'Paid' as Invoice['status']
-    };
-  });
 
   const filteredInvoices = invoices.filter(inv => {
     const matchesSearch = inv.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -145,42 +68,6 @@ export default function InvoicesView() {
   const totalOutstanding = invoices.filter(i => i.status === 'Sent').reduce((sum, i) => sum + i.total, 0);
   const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + i.total, 0);
   const totalRefunded = invoices.filter(i => i.status === 'Refunded').reduce((sum, i) => sum + i.total, 0);
-
-  const handleOpenModal = (invoice?: Invoice) => {
-    const isPatur = businessSettings.type === 'EsekPatur';
-    if (invoice) {
-      setEditingInvoice(invoice);
-      setClientSearchTerm(invoice.clientName);
-      setAgentSearchTerm(invoice.bookingAgentName || '');
-      setFormData({
-        clientId: invoice.clientId,
-        bookingAgentId: invoice.bookingAgentId || '',
-        commissionAmount: invoice.commissionAmount || 0,
-        date: invoice.date,
-        dueDate: invoice.dueDate,
-        items: [...invoice.items],
-        taxRate: isPatur ? 0 : invoice.taxRate,
-        status: invoice.status
-      });
-    } else {
-      setEditingInvoice(null);
-      setClientSearchTerm('');
-      setAgentSearchTerm('');
-      const today = new Date().toISOString().split('T')[0];
-      setFormData({
-        clientId: '',
-        bookingAgentId: '',
-        commissionAmount: 0,
-        date: today,
-        dueDate: today,
-        items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }],
-        taxRate: isPatur ? 0 : 18,
-        status: 'Paid'
-      });
-    }
-    setIsModalOpen(false); // Close first to reset any scroll
-    setTimeout(() => setIsModalOpen(true), 10);
-  };
 
   const handleOpenDeleteAlert = (id: string) => {
     setInvoiceToDelete(id);
@@ -204,97 +91,6 @@ export default function InvoicesView() {
       updateInvoice(invoiceToRefund.id, { status: 'Refunded' });
       setInvoiceToRefund(null);
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    let currentClientId = formData.clientId;
-    let currentClientName = '';
-
-    // Check if we have a match in existing clients
-    const existingClient = clients.find(c => c.id === currentClientId || c.name === clientSearchTerm);
-    
-    if (existingClient) {
-      currentClientId = existingClient.id;
-      currentClientName = existingClient.name;
-    } else if (clientSearchTerm.trim()) {
-      // Use the free text name without creating a new client in the database
-      currentClientId = 'casual'; 
-      currentClientName = clientSearchTerm.trim();
-    } else {
-      // No client selected and no search term
-      return;
-    }
-
-    // Handle Booking Agent
-    let currentAgentId = formData.bookingAgentId;
-    let currentAgentName = '';
-    let commission = 0;
-
-    // Convert items back to valid InvoiceItem for the context
-    const processedItems = formData.items.map(item => ({
-      ...item,
-      unitPrice: item.unitPrice === '' ? 0 : item.unitPrice
-    })) as InvoiceItem[];
-
-    const existingAgent = bookingAgents.find(a => a.id === currentAgentId || a.name === agentSearchTerm);
-    if (existingAgent) {
-      currentAgentId = existingAgent.id;
-      currentAgentName = existingAgent.name;
-      // Calculate commission based on subtotal
-      const subtotal = processedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-      let calculatedCommission = subtotal * (existingAgent.commissionRate / 100);
-      
-      // Apply minimum commission if defined
-      if (existingAgent.minCommission && calculatedCommission < existingAgent.minCommission) {
-        calculatedCommission = existingAgent.minCommission;
-      }
-      
-      commission = calculatedCommission;
-    } else if (agentSearchTerm.trim()) {
-      currentAgentId = 'custom';
-      currentAgentName = agentSearchTerm.trim();
-      commission = formData.commissionAmount || 0;
-    }
-
-    // Explicitly determine tax rate based strictly on the current active business settings
-    const activeTaxRate = businessSettings.type === 'EsekPatur' ? 0 : 18;
-
-    const invoiceData = {
-      clientId: currentClientId,
-      clientName: currentClientName,
-      bookingAgentId: currentAgentId || undefined,
-      bookingAgentName: currentAgentName || undefined,
-      commissionAmount: commission || undefined,
-      date: formData.date,
-      dueDate: formData.dueDate,
-      items: processedItems,
-      taxRate: activeTaxRate,
-      status: formData.status
-    };
-
-    if (editingInvoice) {
-      updateInvoice(editingInvoice.id, invoiceData);
-    } else {
-      addInvoice(invoiceData);
-    }
-    setIsModalOpen(false);
-  };
-
-  const addItem = () => {
-    setFormData({
-      ...formData,
-      items: [...formData.items, { id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }]
-    });
-  };
-
-  const removeItem = (id: string) => {
-    if (formData.items.length <= 1) return;
-    setFormData({
-      ...formData,
-      items: formData.items.filter(item => item.id !== id)
-    });
   };
 
   const handleDownloadPDF = async (invoice: Invoice) => {
@@ -332,7 +128,7 @@ export default function InvoicesView() {
           <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('invoices.title')}</h1>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('invoices.subtitle')}</p>
         </div>
-        <Button onClick={() => handleOpenModal()} className="w-full sm:w-auto h-11 md:h-10">
+        <Button onClick={() => navigate('/invoices/new')} className="w-full sm:w-auto h-11 md:h-10">
           <Plus className="h-5 w-5 md:h-4 md:w-4 me-2" /> {t('invoices.create_invoice')}
         </Button>
       </div>
@@ -488,7 +284,7 @@ export default function InvoicesView() {
                             variant="ghost" 
                             size="icon" 
                             className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
-                            onClick={() => handleOpenModal(invoice)}
+                            onClick={() => navigate(`/invoices/${invoice.id}/edit`)}
                             title={t('common.edit')}
                           >
                             <Edit2 className="h-5 w-5 md:h-4 md:w-4" />
@@ -538,327 +334,6 @@ export default function InvoicesView() {
         confirmText={t('invoices.refund')}
         variant="destructive"
       />
-
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title={editingInvoice ? `${t('common.edit')} ${editingInvoice.id}` : t('invoices.create_invoice')}
-      >
-        <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
-          <form onSubmit={handleSubmit} className="space-y-6 pb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 relative" ref={dropdownRef}>
-                <label className="text-sm font-medium">{t('invoices.client')}</label>
-                <div className="relative">
-                  <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder={t('invoices.choose_client')}
-                    className="ps-9 h-11 md:h-10"
-                    value={clientSearchTerm}
-                    onChange={(e) => {
-                      setClientSearchTerm(e.target.value);
-                      setIsClientDropdownOpen(true);
-                    }}
-                    onFocus={() => setIsClientDropdownOpen(true)}
-                    required
-                  />
-                </div>
-
-                {isClientDropdownOpen && (
-                  <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white rounded-lg border shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="max-h-60 overflow-y-auto">
-                      {filteredSearchClients.length > 0 ? (
-                        filteredSearchClients.map(client => (
-                          <button
-                            key={client.id}
-                            type="button"
-                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors border-b last:border-0"
-                            onClick={() => {
-                              setFormData({ ...formData, clientId: client.id });
-                              setClientSearchTerm(client.name);
-                              setIsClientDropdownOpen(false);
-                            }}
-                          >
-                            <div className="text-start">
-                              <p className="text-sm font-bold text-slate-900">{client.name}</p>
-                              <p className="text-[10px] text-slate-500">{client.email}</p>
-                            </div>
-                            <ArrowRight className="h-4 w-4 text-slate-300" />
-                          </button>
-                        ))
-                      ) : clientSearchTerm ? (
-                        <div className="p-4 text-center text-xs text-slate-500">
-                          {t('clients.no_clients_found') || 'No matching clients found.'}
-                        </div>
-                      ) : null}
-                    </div>
-                    
-                    <div className="bg-slate-50 p-2 space-y-1 border-t">
-                      {clientSearchTerm && !clients.some(c => c.name.toLowerCase() === clientSearchTerm.toLowerCase()) && (
-                        <button
-                          type="button"
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                          onClick={() => setIsClientDropdownOpen(false)}
-                        >
-                          <div className="bg-indigo-100 p-1 rounded">
-                            <Plus className="h-3 w-3" />
-                          </div>
-                          <span>{t('common.continue_with') || 'Continue with'} "{clientSearchTerm}"</span>
-                        </button>
-                      )}
-                      
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
-                        onClick={() => navigate(`/clients?action=new&name=${encodeURIComponent(clientSearchTerm)}`)}
-                      >
-                        <div className="bg-slate-200 p-1 rounded">
-                          <UserPlus className="h-3 w-3" />
-                        </div>
-                        <span>{t('clients.add_client')}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('common.status')}</label>
-                <select 
-                  className="flex h-11 md:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value as Invoice['status']})}
-                >
-                  <option value="Draft">{t('invoices.draft')}</option>
-                  <option value="Sent">{t('invoices.sent')}</option>
-                  <option value="Paid">{t('invoices.paid')}</option>
-                  <option value="Overdue">{t('invoices.overdue')}</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 relative" ref={agentDropdownRef}>
-                <label className="text-sm font-medium">{t('common.booking_agents')}</label>
-                <div className="relative">
-                  <Briefcase className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder={t('bookingAgents.search_placeholder')}
-                    className="ps-9 h-11 md:h-10"
-                    value={agentSearchTerm}
-                    onChange={(e) => {
-                      setAgentSearchTerm(e.target.value);
-                      setIsAgentDropdownOpen(true);
-                    }}
-                    onFocus={() => setIsAgentDropdownOpen(true)}
-                  />
-                </div>
-
-                {isAgentDropdownOpen && (
-                  <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white rounded-lg border shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="max-h-60 overflow-y-auto">
-                      {filteredSearchAgents.length > 0 ? (
-                        filteredSearchAgents.map(agent => (
-                          <button
-                            key={agent.id}
-                            type="button"
-                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors border-b last:border-0"
-                            onClick={() => {
-                              setFormData({ ...formData, bookingAgentId: agent.id });
-                              setAgentSearchTerm(agent.name);
-                              setIsAgentDropdownOpen(false);
-                            }}
-                          >
-                            <div className="text-start">
-                              <p className="text-sm font-bold text-slate-900">{agent.name}</p>
-                              <p className="text-[10px] text-slate-500">{agent.commissionRate}% Commission</p>
-                            </div>
-                            <ArrowRight className="h-4 w-4 text-slate-300" />
-                          </button>
-                        ))
-                      ) : agentSearchTerm ? (
-                        <div className="p-4 text-center text-xs text-slate-500">
-                          No matching agents found.
-                        </div>
-                      ) : null}
-                    </div>
-                    
-                    <div className="bg-slate-50 p-2 space-y-1 border-t">
-                      {agentSearchTerm && !bookingAgents.some(a => a.name.toLowerCase() === agentSearchTerm.toLowerCase()) && (
-                        <div className="p-2 space-y-2">
-                           <p className="text-[10px] font-bold text-slate-500 uppercase px-1">Custom Commission</p>
-                           <Input 
-                             type="number"
-                             placeholder="Commission Amount (ILS)"
-                             className="h-9 text-xs"
-                             value={formData.commissionAmount}
-                             onChange={(e) => setFormData({...formData, commissionAmount: parseFloat(e.target.value) || 0})}
-                           />
-                           <button
-                             type="button"
-                             className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                             onClick={() => setIsAgentDropdownOpen(false)}
-                           >
-                             <Plus className="h-3 w-3" />
-                             <span>Use "{agentSearchTerm}" (Custom)</span>
-                           </button>
-                        </div>
-                      )}
-                      
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
-                        onClick={() => navigate(`/booking-agents?action=new&name=${encodeURIComponent(agentSearchTerm)}`)}
-                      >
-                        <UserPlus className="h-3 w-3" />
-                        <span>Add New Agent</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('invoices.issue_date')}</label>
-                <Input type="date" className="h-11 md:h-10" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-medium">{t('invoices.line_items')}</label>
-              </div>
-              
-              <div className="hidden md:flex gap-2 mb-1 px-1">
-                <div className="flex-1 text-[10px] font-bold uppercase text-slate-400">{t('invoices.item_description')}</div>
-                <div className="w-20 text-[10px] font-bold uppercase text-slate-400">{t('invoices.qty')}</div>
-                <div className="w-28 text-[10px] font-bold uppercase text-slate-400">{t('invoices.price')}</div>
-                <div className="w-8 shrink-0"></div>
-              </div>
-
-              <div className="space-y-4 md:space-y-3">
-                {formData.items.map((item, index) => (
-                  <div key={item.id} className="flex flex-col md:flex-row gap-3 md:gap-2 items-start md:items-center p-3 md:p-0 bg-slate-50 md:bg-transparent rounded-lg border md:border-0 border-slate-200">
-                    <div className="w-full md:flex-1">
-                      <label className="md:hidden text-[10px] font-bold uppercase text-slate-400 mb-1 block">{t('invoices.item_description')}</label>
-                      <Input 
-                        placeholder={t('invoices.item_description')}
-                        className="h-11 md:h-10"
-                        value={item.description}
-                        onChange={(e) => {
-                          const items = [...formData.items];
-                          items[index].description = e.target.value;
-                          setFormData({...formData, items});
-                        }}
-                      />
-                    </div>
-                    <div className="flex gap-3 w-full md:w-auto">
-                      <div className="flex-1 md:w-20">
-                        <label className="md:hidden text-[10px] font-bold uppercase text-slate-400 mb-1 block">{t('invoices.qty')}</label>
-                        <Input 
-                          type="number" 
-                          placeholder={t('invoices.qty')}
-                          className="h-11 md:h-10"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const items = [...formData.items];
-                            items[index].quantity = parseInt(e.target.value) || 0;
-                            setFormData({...formData, items});
-                          }}
-                        />
-                      </div>
-                      <div className="flex-[2] md:w-28">
-                        <label className="md:hidden text-[10px] font-bold uppercase text-slate-400 mb-1 block">{t('invoices.price')}</label>
-                        <Input 
-                          type="number" 
-                          placeholder={t('invoices.price')}
-                          className="h-11 md:h-10"
-                          value={item.unitPrice}
-                          onChange={(e) => {
-                            const items = [...formData.items];
-                            items[index].unitPrice = e.target.value === '' ? '' : (parseFloat(e.target.value) || 0);
-                            setFormData({...formData, items});
-                          }}
-                        />
-                      </div>
-                      <div className="pt-6 md:pt-0">
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-11 w-11 md:h-10 md:w-10 text-slate-400 hover:text-red-500 shrink-0"
-                          onClick={() => removeItem(item.id)}
-                        >
-                          <X className="h-5 w-5 md:h-4 md:w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-start">
-                <Button type="button" variant="outline" size="sm" onClick={addItem} className="h-9 md:h-8 border-dashed">
-                  <Plus className="h-4 w-4 me-1" /> {t('invoices.add_item')}
-                </Button>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t space-y-4 md:space-y-2">
-              <div className="flex justify-between md:justify-end items-center gap-4">
-                <div className="flex flex-col items-end">
-                  <label className="text-sm font-medium text-slate-500">{t('invoices.tax_rate')}</label>
-                  {businessSettings.type === 'EsekPatur' ? (
-                    <span className="text-[10px] text-slate-400 font-medium">({t('profile.type_patur')})</span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 font-medium">(Fixed)</span>
-                  )}
-                </div>
-                <div className="w-24 md:w-28">
-                  <Input 
-                    type="number" 
-                    placeholder="0" 
-                    className="h-11 md:h-10 bg-slate-50 text-slate-500 cursor-not-allowed opacity-80"
-                    value={businessSettings.type === 'EsekPatur' ? 0 : 18}
-                    readOnly
-                    disabled
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-1.5 md:gap-1">
-                <div className="flex justify-between w-full md:w-64 text-sm text-slate-500 px-1">
-                  <span>{t('invoices.subtotal')}</span>
-                  <span>{formatCurrency(formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0))}</span>
-                </div>
-                <div className="flex justify-between w-full md:w-64 text-sm text-slate-500 px-1">
-                  <span>{t('invoices.tax')} ({businessSettings.type === 'EsekPatur' ? 0 : 18}%)</span>
-                  <span>
-                    {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0) * ((businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between w-full md:w-64 text-xl md:text-2xl font-black border-t pt-4 md:pt-2 mt-2 md:mt-1 px-1">
-                  <span>{t('common.total')}</span>
-                  <span className="text-primary font-bold">
-                    {formatCurrency(
-                      formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0) * (1 + (businessSettings.type === 'EsekPatur' ? 0 : 18) / 100)
-                    )}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-11 md:h-10 order-2 sm:order-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="h-11 md:h-10 px-8 order-1 sm:order-2 font-bold">
-                {editingInvoice ? t('common.save') : t('invoices.create_invoice')}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </Modal>
 
       {/* Hidden Portal for PDF Generation */}
       <div 

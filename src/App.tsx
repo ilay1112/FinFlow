@@ -12,6 +12,7 @@ import LoginPage from './pages/LoginView';
 import DashboardPage from './pages/DashboardView';
 import ExpensesPage from './pages/ExpensesView';
 import InvoicesPage from './pages/InvoicesView';
+import InvoiceFormPage from './pages/InvoiceFormPage';
 import ClientsPage from './pages/ClientsView';
 import BookingAgentsPage from './pages/BookingAgentsView';
 import TaxesPage from './pages/TaxesView';
@@ -64,6 +65,8 @@ function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="invoices/new" element={<InvoiceFormPage />} />
+        <Route path="invoices/:id/edit" element={<InvoiceFormPage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="booking-agents" element={<BookingAgentsPage />} />
         <Route path="taxes" element={<TaxesPage />} />
