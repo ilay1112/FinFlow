@@ -25,6 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
+import { FloatingActionButton } from '../components/FloatingActionButton';
 
 export function AppLayout() {
   const { t, i18n } = useTranslation();
@@ -355,6 +356,8 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+
+      <FloatingActionButton isSidebarOpen={isSidebarOpen} />
 
       {/* Create Workspace Modal */}
       <Modal 
