@@ -76,7 +76,12 @@ export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
   const message = buildWhatsAppMessage(params);
 
   if (clientPhone) {
-    const phone = clientPhone.replace(/\D/g, '');
+    const digits = clientPhone.replace(/\D/g, '');
+    const phone = digits.startsWith('972')
+      ? digits
+      : digits.startsWith('0')
+        ? `972${digits.slice(1)}`
+        : `972${digits}`;
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
     return;
