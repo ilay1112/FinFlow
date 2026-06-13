@@ -354,14 +354,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const taxAmount = subtotal * (invoice.taxRate / 100);
     const total = subtotal + taxAmount;
     
-    // Calculate next sequential ID based on currently synced invoices
-    const nextNumber = invoices.reduce((max, inv) => {
-      const match = inv.id.match(/\d+/);
-      const num = match ? parseInt(match[0], 10) : 0;
-      return num > max ? num : max;
-    }, 3999) + 1;
+    // Receipts get their own RCPT-XXXX sequence; everything else uses INV-XXXX
+    const isReceipt = invoice.documentType === 'Receipt';
+    const prefix = isReceipt ? 'RCPT' : 'INV';
+    const prefixRe = isReceipt ? /^RCPT-(\d+)$/ : /^INV-(\d+)$/;
+    const seed = isReceipt ? 0 : 3999;
 
-    const newInvoice = { ...invoice, id: `INV-${nextNumber}`, total };
+    const nextNumber = invoices.reduce((max, inv) => {
+      const match = inv.id.match(prefixRe);
+      const num = match ? parseInt(match[1], 10) : 0;
+      return num > max ? num : max;
+    }, seed) + 1;
+
+    const newInvoice = { ...invoice, id: `${prefix}-${String(nextNumber).padStart(4, '0')}`, total };
     
     setInvoices(prev => [newInvoice, ...prev]);
     setClients(prev => prev.map(c => 
