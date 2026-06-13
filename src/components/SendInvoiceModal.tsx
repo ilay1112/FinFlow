@@ -111,7 +111,14 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
     try {
       const { pdfBlob, driveUrl } = await getPDFAndDriveUrl();
       setStep('sending');
-      await shareInvoice({ invoice, clientPhone: phone, driveUrl, pdfBlob });
+      await shareInvoice({
+        invoice,
+        clientPhone: phone,
+        driveUrl,
+        pdfBlob,
+        businessName: businessSettings.name,
+        businessType: businessSettings.type,
+      });
       updateInvoice(invoice.id, { status: 'Sent', sentAt: new Date().toISOString() });
       setStep('done');
     } catch (err: any) {

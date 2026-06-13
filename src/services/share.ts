@@ -1,25 +1,85 @@
-import type { Invoice } from '../context/FinanceContext';
+import type { Invoice, BusinessType, InvoiceItem } from '../context/FinanceContext';
 
 interface ShareInvoiceParams {
   invoice: Invoice;
   clientPhone?: string;
   driveUrl: string;
+  businessName: string;
+  businessType: BusinessType;
   pdfBlob?: Blob;
 }
 
-export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
-  const { invoice, clientPhone, driveUrl } = params;
+function formatDateIL(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-');
+  return `${d}/${m}/${y}`;
+}
 
-  // navigator.share({ files }) requires the call to happen synchronously inside
-  // a user-gesture handler — it cannot survive the async PDF generation + Drive
-  // upload that precedes this call. Go straight to the WhatsApp link instead.
+function formatILS(amount: number): string {
+  return `₪${amount.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function docTypeLabel(type: BusinessType): string {
+  return type === 'EsekPatur' ? 'קבלה' : 'חשבונית מס';
+}
+
+function buildItemsList(items: InvoiceItem[]): string {
+  return items
+    .map(item => {
+      const lineTotal = item.quantity * item.unitPrice;
+      const qty = item.quantity > 1 ? ` × ${item.quantity}` : '';
+      return `    • ${item.description}${qty} — ${formatILS(lineTotal)}`;
+    })
+    .join('\n');
+}
+
+function buildWhatsAppMessage(params: ShareInvoiceParams): string {
+  const { invoice, driveUrl, businessName, businessType } = params;
+  const docType = docTypeLabel(businessType);
+  const itemsList = buildItemsList(invoice.items);
+  const subtotal = invoice.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const hasVat = invoice.taxRate > 0;
+
+  const lines = [
+    `שלום ${invoice.clientName} 👋`,
+    ``,
+    `מצורפת *${docType}* מ*${businessName}*.`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━`,
+    `📄 *מספר מסמך:* ${invoice.id}`,
+    `📅 *תאריך הפקה:* ${formatDateIL(invoice.date)}`,
+    `━━━━━━━━━━━━━━━━━━`,
+    ``,
+    `*פירוט:*`,
+    itemsList,
+  ];
+
+  if (hasVat) {
+    lines.push(``, `    סה״כ לפני מע״מ: ${formatILS(subtotal)}`);
+    lines.push(`    מע״מ (${invoice.taxRate}%): ${formatILS(subtotal * invoice.taxRate / 100)}`);
+  }
+
+  lines.push(
+    ``,
+    `💰 *סה״כ לתשלום: ${formatILS(invoice.total)}*`,
+    ``,
+    `🔗 לצפייה ב-PDF:`,
+    driveUrl,
+    ``,
+    `תודה רבה על שיתוף הפעולה! 🙏`,
+    `_${businessName}_`,
+  );
+
+  return lines.join('\n');
+}
+
+export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
+  const { clientPhone, driveUrl } = params;
+
+  const message = buildWhatsAppMessage(params);
 
   if (clientPhone) {
     const phone = clientPhone.replace(/\D/g, '');
-    const text = encodeURIComponent(
-      `Invoice ${invoice.id} — Total: ₪${invoice.total.toLocaleString()}\nView PDF: ${driveUrl}`
-    );
-    window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     return;
   }
 
