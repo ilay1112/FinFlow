@@ -2,6 +2,7 @@ import { SocialLogin } from '@capgo/capacitor-social-login';
 import { Capacitor } from '@capacitor/core';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID;
 
 let isInitializing = false;
 let isInitialized = false;
@@ -22,6 +23,7 @@ export const authService = {
         await SocialLogin.initialize({
           google: {
             webClientId: GOOGLE_CLIENT_ID,
+            iOSClientId: GOOGLE_IOS_CLIENT_ID,
             mode: 'online',
           },
         });
