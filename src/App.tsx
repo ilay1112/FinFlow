@@ -9,6 +9,8 @@ import { AlertCircle } from 'lucide-react';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 import LoginPage from './pages/LoginView';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
 import DashboardPage from './pages/DashboardView';
 import ExpensesPage from './pages/ExpensesView';
 import InvoicesPage from './pages/InvoicesView';
@@ -50,8 +52,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Landing/Login Page */}
+      {/* Public Pages */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
 
       {/* Protected Application Routes */}
       <Route 
