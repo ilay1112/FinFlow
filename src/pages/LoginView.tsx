@@ -75,9 +75,9 @@ export default function LoginView() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto snap-y snap-mandatory md:snap-none">
         {/* Hero Section */}
-        <section className="bg-white border-b overflow-hidden">
+        <section className="bg-white border-b overflow-hidden snap-start min-h-[calc(100dvh-4rem)] md:min-h-0 flex flex-col justify-center">
           <div className="max-w-7xl mx-auto px-6 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8 text-center lg:text-start">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100 text-xs font-bold uppercase tracking-wider">
@@ -179,7 +179,7 @@ export default function LoginView() {
         </section>
 
         {/* Features Section */}
-        <section className="max-w-7xl mx-auto px-6 py-20">
+        <section className="max-w-7xl mx-auto px-6 py-20 snap-start min-h-[calc(100dvh-4rem)] md:min-h-0 flex flex-col justify-center">
           <div className="text-center mb-16 space-y-4">
             <h2 className="text-3xl md:text-4xl font-black text-slate-900">{t('login.features_title')}</h2>
             <p className="text-slate-500 max-w-2xl mx-auto">{t('login.features_subtitle')}</p>
@@ -203,7 +203,7 @@ export default function LoginView() {
         </section>
 
         {/* Drive Explanation Section */}
-        <section className="bg-slate-900 text-white py-20 overflow-hidden relative">
+        <section className="bg-slate-900 text-white py-20 overflow-hidden relative snap-start min-h-[calc(100dvh-4rem)] md:min-h-0 flex flex-col justify-center">
           <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px]"></div>
           <div className="max-w-4xl mx-auto px-6 text-center relative z-10 space-y-8">
             <div className="inline-flex p-4 rounded-full bg-white/10 backdrop-blur-md mb-4 border border-white/20 shadow-2xl">
@@ -226,7 +226,7 @@ export default function LoginView() {
         </section>
 
         {/* Footer */}
-        <footer className="bg-white border-t py-12 px-6">
+        <footer className="bg-white border-t py-12 px-6 snap-start">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex items-center gap-2">
               <div className="bg-primary rounded-lg p-1">
