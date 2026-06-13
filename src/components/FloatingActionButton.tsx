@@ -6,6 +6,7 @@ import { cn } from '../utils/utils';
 
 interface Props {
   isSidebarOpen?: boolean;
+  onCloseSidebar?: () => void;
 }
 
 const HIDE_ON: RegExp[] = [
@@ -13,7 +14,7 @@ const HIDE_ON: RegExp[] = [
   /^\/invoices\/.+\/edit$/,
 ];
 
-export function FloatingActionButton({ isSidebarOpen }: Props) {
+export function FloatingActionButton({ isSidebarOpen, onCloseSidebar }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,7 +100,7 @@ export function FloatingActionButton({ isSidebarOpen }: Props) {
                   animationDelay: `${i * 55}ms`,
                   animationFillMode: 'backwards',
                 }}
-                onClick={() => { setIsOpen(false); action.onClick(); }}
+                onClick={() => { setIsOpen(false); onCloseSidebar?.(); action.onClick(); }}
               >
                 <div className="bg-white/25 p-1.5 rounded-xl shrink-0">
                   <action.icon className="h-4 w-4" strokeWidth={2.5} />

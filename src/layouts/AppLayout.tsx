@@ -357,7 +357,7 @@ export function AppLayout() {
         </main>
       </div>
 
-      <FloatingActionButton isSidebarOpen={isSidebarOpen} />
+      <FloatingActionButton isSidebarOpen={isSidebarOpen} onCloseSidebar={() => setIsSidebarOpen(false)} />
 
       {/* Create Workspace Modal */}
       <Modal 
