@@ -4,25 +4,16 @@ interface ShareInvoiceParams {
   invoice: Invoice;
   clientPhone?: string;
   driveUrl: string;
-  pdfBlob: Blob;
+  pdfBlob?: Blob;
 }
 
 export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
-  const { invoice, clientPhone, driveUrl, pdfBlob } = params;
-  const filename = `invoice_${invoice.id}.pdf`;
-  const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+  const { invoice, clientPhone, driveUrl } = params;
 
-  // Native OS share sheet — opens WhatsApp, Telegram, etc. with the PDF as a real attachment
-  if (navigator.canShare?.({ files: [pdfFile] })) {
-    await navigator.share({
-      files: [pdfFile],
-      title: `Invoice ${invoice.id}`,
-      text: `Invoice ${invoice.id} — Total: ₪${invoice.total.toLocaleString()}`,
-    });
-    return;
-  }
+  // navigator.share({ files }) requires the call to happen synchronously inside
+  // a user-gesture handler — it cannot survive the async PDF generation + Drive
+  // upload that precedes this call. Go straight to the WhatsApp link instead.
 
-  // WhatsApp Web fallback with Drive link
   if (clientPhone) {
     const phone = clientPhone.replace(/\D/g, '');
     const text = encodeURIComponent(
@@ -32,6 +23,6 @@ export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
     return;
   }
 
-  // Last resort: copy Drive URL to clipboard
+  // No phone — copy Drive URL to clipboard as fallback
   await navigator.clipboard.writeText(driveUrl);
 }
