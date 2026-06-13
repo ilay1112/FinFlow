@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import * as googleDrive from '../services/googleDrive';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
+export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
 
 export interface BusinessSettings {
   name: string;
@@ -66,6 +67,7 @@ export interface Invoice {
   taxRate: number;
   total: number;
   status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded';
+  documentType?: DocumentType;
   pdfUrl?: string;
   sentAt?: string;
 }

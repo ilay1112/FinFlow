@@ -10,12 +10,13 @@ import {
   UserPlus,
   ChevronLeft,
 } from 'lucide-react';
-import { useFinance, type Invoice, type InvoiceItem } from '../context/FinanceContext';
+import { useFinance, type Invoice, type InvoiceItem, type DocumentType } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
 interface InvoiceFormData {
   clientId: string;
+  documentType: DocumentType;
   bookingAgentId?: string;
   commissionAmount?: number;
   date: string;
@@ -50,6 +51,7 @@ export default function InvoiceFormPage() {
     if (editingInvoice) {
       return {
         clientId: editingInvoice.clientId,
+        documentType: editingInvoice.documentType ?? (isPatur ? 'Receipt' : 'TaxInvoice'),
         bookingAgentId: editingInvoice.bookingAgentId || '',
         commissionAmount: editingInvoice.commissionAmount || 0,
         date: editingInvoice.date,
@@ -61,6 +63,7 @@ export default function InvoiceFormPage() {
     }
     return {
       clientId: '',
+      documentType: isPatur ? 'Receipt' : 'TaxInvoice',
       bookingAgentId: '',
       commissionAmount: 0,
       date: today,
@@ -173,6 +176,7 @@ export default function InvoiceFormPage() {
     const invoiceData = {
       clientId: currentClientId,
       clientName: currentClientName,
+      documentType: formData.documentType,
       bookingAgentId: currentAgentId || undefined,
       bookingAgentName: currentAgentName || undefined,
       commissionAmount: commission || undefined,
@@ -269,6 +273,32 @@ export default function InvoiceFormPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Document Type */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.document_type')}</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['TaxInvoice',        t('invoices.doc_tax_invoice')],
+                ['Receipt',           t('invoices.doc_receipt')],
+                ['TaxInvoiceReceipt', t('invoices.doc_tax_invoice_receipt')],
+                ['TransactionInvoice',t('invoices.doc_transaction_invoice')],
+              ] as [DocumentType, string][]).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, documentType: value })}
+                  className={`h-11 rounded-xl border-2 text-sm font-bold transition-all ${
+                    formData.documentType === value
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Status + Date — side by side on mobile too */}
