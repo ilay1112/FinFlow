@@ -40,14 +40,12 @@ function buildWhatsAppMessage(params: ShareInvoiceParams): string {
   const hasVat = invoice.taxRate > 0;
 
   const lines = [
-    `שלום ${invoice.clientName} 👋`,
+    `שלום ${invoice.clientName},`,
     ``,
     `מצורפת *${docType}* מ*${businessName}*.`,
     ``,
-    `━━━━━━━━━━━━━━━━━━`,
-    `📄 *מספר מסמך:* ${invoice.id}`,
-    `📅 *תאריך הפקה:* ${formatDateIL(invoice.date)}`,
-    `━━━━━━━━━━━━━━━━━━`,
+    `*מספר מסמך:* ${invoice.id}`,
+    `*תאריך הפקה:* ${formatDateIL(invoice.date)}`,
     ``,
     `*פירוט:*`,
     itemsList,
@@ -60,12 +58,12 @@ function buildWhatsAppMessage(params: ShareInvoiceParams): string {
 
   lines.push(
     ``,
-    `💰 *סה״כ לתשלום: ${formatILS(invoice.total)}*`,
+    `*סה״כ לתשלום: ${formatILS(invoice.total)}*`,
     ``,
-    `🔗 לצפייה ב-PDF:`,
+    `לצפייה ב-PDF:`,
     driveUrl,
     ``,
-    `תודה רבה על שיתוף הפעולה! 🙏`,
+    `תודה רבה על שיתוף הפעולה!`,
     `_${businessName}_`,
   );
 
@@ -79,7 +77,8 @@ export async function shareInvoice(params: ShareInvoiceParams): Promise<void> {
 
   if (clientPhone) {
     const phone = clientPhone.replace(/\D/g, '');
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
     return;
   }
 
