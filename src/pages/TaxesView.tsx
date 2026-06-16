@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/Button';
 import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
 import { useCurrencyFormatter } from '../utils/format';
+import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
 
 export default function TaxesView() {
   const { t } = useTranslation();
@@ -45,6 +46,8 @@ export default function TaxesView() {
         <h1 className="text-3xl font-bold text-slate-900">{t('common.taxes')}</h1>
         <p className="text-slate-500 mt-1">{t('taxes.subtitle')}</p>
       </div>
+
+      <OsekPaturCeilingWarning />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">

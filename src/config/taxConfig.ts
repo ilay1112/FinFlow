@@ -52,6 +52,18 @@ const ALLOCATION_THRESHOLD_TABLE: DatedValue<number>[] = [
   { effectiveFrom: '2026-06-01', value: 5000 },
 ];
 
+/**
+ * Annual turnover ceiling (₪) above which an Esek Patur loses exempt status and
+ * must register as an Osek Murshe, by effective date. The figure is set per
+ * calendar year and changes most years; resolve it against a date within the
+ * relevant year (e.g. `${year}-12-31`).
+ *
+ * Verified by shlomit (ISRAELI_TAX_COMPLIANCE_REPORT.md): ₪122,833 for 2026.
+ */
+const OSEK_PATUR_CEILING_TABLE: DatedValue<number>[] = [
+  { effectiveFrom: '2026-01-01', value: 122833 },
+];
+
 export interface TaxBracket {
   /** Upper income limit of this bracket (inclusive); `Infinity` for the top band. */
   limit: number;
@@ -88,6 +100,11 @@ export function getVatRate(date: string): number {
 /** Returns the allocation-number threshold (₪ before VAT) effective on the given ISO date. */
 export function getAllocationThreshold(date: string): number {
   return resolveDated(ALLOCATION_THRESHOLD_TABLE, date);
+}
+
+/** Returns the Esek Patur annual turnover ceiling (₪) effective on the given ISO date. */
+export function getOsekPaturCeiling(date: string): number {
+  return resolveDated(OSEK_PATUR_CEILING_TABLE, date);
 }
 
 /** Returns the progressive income-tax brackets effective on the given ISO date. */

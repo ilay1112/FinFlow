@@ -59,6 +59,31 @@ export function computeCommission(
   return agent.minCommission && calc < agent.minCommission ? agent.minCommission : calc;
 }
 
+/**
+ * Year-to-date turnover (מחזור) for the given calendar year, on an ISSUED-document
+ * basis: the sum of totals of every document issued in that year that is not a
+ * Draft and not Cancelled. This is the legally relevant turnover figure for the
+ * Esek Patur ceiling — distinct from the paid-only "revenue" the dashboard/taxes
+ * screens display — because a document counts toward turnover once it is issued
+ * (by its issue date), regardless of whether it has been paid yet.
+ *
+ * For an Esek Patur (0% VAT) the document total already equals the net turnover,
+ * so no VAT is stripped here.
+ */
+export function computeYtdTurnover(
+  invoices: Pick<Invoice, 'date' | 'status' | 'total'>[],
+  year: number
+): number {
+  return invoices
+    .filter(
+      inv =>
+        inv.status !== 'Draft' &&
+        inv.status !== 'Cancelled' &&
+        new Date(inv.date).getFullYear() === year
+    )
+    .reduce((sum, inv) => sum + inv.total, 0);
+}
+
 // Each legal document type gets its own gapless, monotonic series (1a). Seeds are
 // the *last used* number (next document is seed + 1) — so the first TaxInvoice is
 // INV-4000, the first receipt RCPT-0001, etc.

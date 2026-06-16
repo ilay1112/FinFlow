@@ -233,7 +233,16 @@
     "estimate_warning": "This is a simplified estimate. Consult with a tax professional for accurate quarterly filings and local tax laws.",
     "export_report": "Export Tax Report",
     "export_subtitle": "Generate a comprehensive PDF report for your accountant.",
-    "download_report": "Download PDF"
+    "download_report": "Download PDF",
+    "ceiling": {
+      "approaching_title": "Approaching the Osek Patur turnover ceiling",
+      "approaching_desc": "Your turnover this year is nearing the annual ceiling for an Esek Patur. If it exceeds the ceiling you are required to register as an Osek Murshe and start charging VAT.",
+      "exceeded_title": "Osek Patur turnover ceiling exceeded",
+      "exceeded_desc": "Your turnover this year has passed the annual ceiling for an Esek Patur. You are required to register as an Osek Murshe. Consult your accountant as soon as possible.",
+      "turnover_label": "Turnover (YTD)",
+      "ceiling_label": "Annual ceiling",
+      "usage_label": "Used"
+    }
   },
   "profile": {
     "title": "Business Profile",

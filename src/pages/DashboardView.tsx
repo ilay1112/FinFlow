@@ -44,6 +44,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
 import { cn } from '../utils/utils';
 
 import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
@@ -212,6 +213,8 @@ export default function DashboardView() {
           ))}
         </div>
       </div>
+
+      <OsekPaturCeilingWarning />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
