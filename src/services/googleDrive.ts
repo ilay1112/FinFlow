@@ -178,10 +178,10 @@ export async function fetchAppState(token: string, fileId: string): Promise<AppS
 }
 
 /**
- * Overwrites the file content.
+ * Overwrites the file content. Returns the new Drive `version` of the file.
  */
-export async function saveAppState(token: string, fileId: string, data: AppState): Promise<void> {
-  const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+export async function saveAppState(token: string, fileId: string, data: AppState): Promise<string> {
+  const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=version`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -190,6 +190,90 @@ export async function saveAppState(token: string, fileId: string, data: AppState
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error('Failed to save app state to Drive');
+  const result = await response.json().catch(() => ({}));
+  return (result.version as string) || '';
+}
+
+/**
+ * Reads the monotonic `version` of a Drive file's metadata. Drive bumps this on
+ * every content change, so it doubles as an optimistic-concurrency token.
+ */
+export async function getFileVersion(token: string, fileId: string): Promise<string> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=version`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Failed to read file version from Drive');
+  const data = await response.json();
+  return (data.version as string) || '';
+}
+
+/** Union two record collections by id; local wins on overlap, remote-only records are kept. */
+function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const r of remote) byId.set(r.id, r);
+  for (const l of local) byId.set(l.id, l);
+  return Array.from(byId.values());
+}
+
+/**
+ * Merges a remote AppState into the local one (Step 1 strategy):
+ * collections are unioned by id with local winning on overlap, so records added
+ * on another device are preserved instead of being clobbered. Singletons
+ * (taxRate, businessSettings) are local-wins; categories are unioned.
+ *
+ * Known limitation: without per-record timestamps/tombstones this cannot resolve
+ * the same record edited on two devices (local wins) and a record deleted locally
+ * but still present remotely may reappear. Addressed by the later LWW/tombstone step.
+ */
+export function mergeAppState(local: AppState, remote: AppState): AppState {
+  return {
+    expenses: mergeById(local.expenses || [], remote.expenses || []),
+    clients: mergeById(local.clients || [], remote.clients || []),
+    invoices: mergeById(local.invoices || [], remote.invoices || []),
+    bookingAgents: mergeById(local.bookingAgents || [], remote.bookingAgents || []),
+    categories: Array.from(new Set([...(remote.categories || []), ...(local.categories || [])])),
+    taxRate: local.taxRate,
+    businessSettings: local.businessSettings,
+  };
+}
+
+/**
+ * Optimistic-concurrency save. Before overwriting, checks whether the file's
+ * Drive `version` still matches the one this device last saw (`expectedVersion`).
+ * If it does, we save directly. If another device wrote in the meantime, we
+ * refetch the remote state, merge it with ours, and retry — so a concurrent
+ * write is merged instead of silently lost.
+ *
+ * Returns the new version and, when a merge happened, the merged state so the
+ * caller can adopt the other device's changes locally.
+ */
+export async function saveAppStateGuarded(
+  token: string,
+  fileId: string,
+  expectedVersion: string | null,
+  localState: AppState
+): Promise<{ version: string; merged: AppState | null }> {
+  let expected = expectedVersion;
+  let stateToSave = localState;
+  let didMerge = false;
+  const MAX_ATTEMPTS = 4;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const current = await getFileVersion(token, fileId);
+    if (current === expected) {
+      const version = await saveAppState(token, fileId, stateToSave);
+      return { version, merged: didMerge ? stateToSave : null };
+    }
+    // Conflict: another device wrote since we loaded. Merge and retry.
+    const remote = await fetchAppState(token, fileId);
+    stateToSave = mergeAppState(stateToSave, remote);
+    expected = current;
+    didMerge = true;
+  }
+
+  // Exhausted retries (rapid concurrent writers) — persist the best merged result.
+  const version = await saveAppState(token, fileId, stateToSave);
+  return { version, merged: stateToSave };
 }
 
 /**

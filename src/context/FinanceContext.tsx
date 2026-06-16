@@ -140,6 +140,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [syncError, setSyncError] = useState<string | null>(null);
   
   const driveFileId = useRef<string | null>(null);
+  const driveVersion = useRef<string | null>(null);
   const isInitialLoad = useRef(true);
 
   // Initial Load from LocalStorage (Fallback)
@@ -214,7 +215,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const { fileId } = await googleDrive.initAppState(accessToken, activeBusiness.name);
           driveFileId.current = fileId;
           const driveData = await googleDrive.fetchAppState(accessToken, fileId);
-          
+          driveVersion.current = await googleDrive.getFileVersion(accessToken, fileId);
+
           setExpenses((driveData.expenses || []) as unknown as Expense[]);
           setCategories(driveData.categories || DEFAULT_CATEGORIES);
           setClients((driveData.clients || []) as unknown as Client[]);
@@ -263,9 +265,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const timer = setTimeout(async () => {
         setIsSyncing(true);
         try {
-          await googleDrive.saveAppState(accessToken, driveFileId.current!, {
-            expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings
-          });
+          const localState = { expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings };
+          const { version, merged } = await googleDrive.saveAppStateGuarded(
+            accessToken,
+            driveFileId.current!,
+            driveVersion.current,
+            localState
+          );
+          driveVersion.current = version;
+
+          // A concurrent write from another device was detected and merged in —
+          // adopt the merged result so this device reflects the other's changes.
+          if (merged) {
+            setExpenses(merged.expenses);
+            setCategories(merged.categories);
+            setClients(merged.clients);
+            setInvoices(merged.invoices);
+            setBookingAgents(merged.bookingAgents || []);
+          }
           setSyncError(null);
         } catch (error) {
           console.error('Drive Save Error:', error);
