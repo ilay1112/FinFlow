@@ -32,7 +32,10 @@ export default function TaxesView() {
   const netProfit = totalRevenue - totalExpenses;
   const taxableIncome = totalRevenue - deductibleExpenses;
   // Income tax only — excludes ביטוח לאומי / מס בריאות / מקדמות (3b: label only).
-  const estimatedTax = calculateProgressiveTax(taxableIncome);
+  // Resolve the brackets against the current tax year's end so the date-keyed
+  // config returns that year's table explicitly rather than defaulting to "today".
+  const reportingYearEnd = `${new Date().getFullYear()}-12-31`;
+  const estimatedTax = calculateProgressiveTax(taxableIncome, reportingYearEnd);
 
   const formatCurrency = useCurrencyFormatter();
 

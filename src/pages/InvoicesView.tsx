@@ -28,6 +28,7 @@ import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
 import { useCurrencyFormatter } from '../utils/format';
+import { resolveCopyType } from '../utils/invoiceMath';
 
 export default function InvoicesView() {
   const { t } = useTranslation();
@@ -103,6 +104,8 @@ export default function InvoicesView() {
   };
 
   const handleDownloadPDF = (invoice: Invoice) => {
+    // Snapshot the invoice from current state so the copy/original designation
+    // reflects whether it had already been issued before this click.
     setIsGeneratingPDF(true);
     setPdfInvoice(invoice);
   };
@@ -116,6 +119,10 @@ export default function InvoicesView() {
       await waitForTemplateReady();
       if (cancelled) return;
       await generateInvoicePDF(pdfInvoice, businessSettings, 'invoice-template-portal');
+      // Record the first issue so a later re-download is correctly marked as a copy.
+      if (!pdfInvoice.firstIssuedAt) {
+        updateInvoice(pdfInvoice.id, { firstIssuedAt: new Date().toISOString() });
+      }
       if (!cancelled) {
         setIsGeneratingPDF(false);
         setPdfInvoice(null);
@@ -373,7 +380,11 @@ export default function InvoicesView() {
       >
         <div id="invoice-template-portal">
           {pdfInvoice && (
-            <InvoiceTemplate invoice={pdfInvoice} business={businessSettings} />
+            <InvoiceTemplate
+              invoice={pdfInvoice}
+              business={businessSettings}
+              copyType={resolveCopyType(pdfInvoice)}
+            />
           )}
         </div>
       </div>

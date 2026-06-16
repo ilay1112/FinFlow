@@ -9,24 +9,25 @@ import {
   Briefcase,
   UserPlus,
   ChevronLeft,
+  AlertTriangle,
 } from 'lucide-react';
-import { useFinance, type Invoice, type InvoiceItem, type DocumentType } from '../context/FinanceContext';
+import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useCurrencyFormatter } from '../utils/format';
-import { computeTotals, computeCommission } from '../utils/invoiceMath';
-import { getVatRate } from '../config/taxConfig';
-
-const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
-  TaxInvoice: 'invoices.doc_tax_invoice',
-  Receipt: 'invoices.doc_receipt',
-  TaxInvoiceReceipt: 'invoices.doc_tax_invoice_receipt',
-  TransactionInvoice: 'invoices.doc_transaction_invoice',
-};
+import {
+  computeTotals,
+  computeCommission,
+  DOCUMENT_TYPE_LABELS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHODS,
+} from '../utils/invoiceMath';
+import { getVatRate, getAllocationThreshold } from '../config/taxConfig';
 
 interface InvoiceFormData {
   clientId: string;
   documentType: DocumentType;
+  paymentMethod: PaymentMethod;
   bookingAgentId?: string;
   commissionAmount?: number;
   date: string;
@@ -34,6 +35,7 @@ interface InvoiceFormData {
   items: (Omit<InvoiceItem, 'unitPrice'> & { unitPrice: number | '' })[];
   taxRate: number;
   status: Invoice['status'];
+  allocationNumber: string;
 }
 
 export default function InvoiceFormPage() {
@@ -71,6 +73,7 @@ export default function InvoiceFormPage() {
           editingInvoice.documentType && allowedDocumentTypes.includes(editingInvoice.documentType)
             ? editingInvoice.documentType
             : (isPatur ? 'Receipt' : 'TaxInvoice'),
+        paymentMethod: editingInvoice.paymentMethod ?? 'BankWire',
         bookingAgentId: editingInvoice.bookingAgentId || '',
         commissionAmount: editingInvoice.commissionAmount || 0,
         date: editingInvoice.date,
@@ -78,11 +81,13 @@ export default function InvoiceFormPage() {
         items: [...editingInvoice.items],
         taxRate: isPatur ? 0 : editingInvoice.taxRate,
         status: editingInvoice.status,
+        allocationNumber: editingInvoice.allocationNumber ?? '',
       };
     }
     return {
       clientId: '',
       documentType: isPatur ? 'Receipt' : 'TaxInvoice',
+      paymentMethod: 'BankWire',
       bookingAgentId: '',
       commissionAmount: 0,
       date: today,
@@ -90,6 +95,7 @@ export default function InvoiceFormPage() {
       items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }],
       taxRate: isPatur ? 0 : getVatRate(today),
       status: 'Paid',
+      allocationNumber: '',
     };
   });
 
@@ -138,6 +144,16 @@ export default function InvoiceFormPage() {
   );
 
   const formatCurrency = useCurrencyFormatter();
+
+  // A tax invoice issued by an Esek Morshe / Company whose pre-VAT subtotal reaches
+  // the dated allocation threshold legally requires an ITA allocation number
+  // (מספר הקצאה) printed on it, or the buyer cannot deduct input VAT. There is no
+  // backend, so we surface the requirement and let the issuer enter the number they
+  // obtained from the ITA portal (interim manual flow).
+  const isTaxInvoiceType =
+    formData.documentType === 'TaxInvoice' || formData.documentType === 'TaxInvoiceReceipt';
+  const allocationThreshold = getAllocationThreshold(formData.date);
+  const allocationRequired = !isPatur && isTaxInvoiceType && subtotal >= allocationThreshold;
 
   const addItem = () => {
     setFormData({
@@ -205,6 +221,7 @@ export default function InvoiceFormPage() {
       // edits to the client record never mutate an already-issued legal document.
       clientIdNumber: currentClientIdNumber,
       documentType,
+      paymentMethod: formData.paymentMethod,
       bookingAgentId: currentAgentId || undefined,
       bookingAgentName: currentAgentName || undefined,
       commissionAmount: commission || undefined,
@@ -213,6 +230,9 @@ export default function InvoiceFormPage() {
       items: processedItems,
       taxRate: activeTaxRate,
       status: formData.status,
+      // Only persist an allocation number for document types that can legally carry
+      // one; a trimmed empty string is stored as undefined.
+      allocationNumber: isTaxInvoiceType ? (formData.allocationNumber.trim() || undefined) : undefined,
     };
 
     if (isEditing && editingInvoice) {
@@ -316,6 +336,41 @@ export default function InvoiceFormPage() {
               ))}
             </select>
           </div>
+
+          {/* Payment Method */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.payment_method')}</label>
+            <select
+              className="flex h-12 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={formData.paymentMethod}
+              onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as PaymentMethod })}
+            >
+              {PAYMENT_METHODS.map(method => (
+                <option key={method} value={method}>{t(PAYMENT_METHOD_LABELS[method])}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Allocation number (מספר הקצאה) — interim manual flow */}
+          {allocationRequired && (
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  {t('invoices.allocation_warning', { amount: formatCurrency(allocationThreshold) })}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-amber-700">{t('invoices.allocation_number')}</label>
+                <Input
+                  className="h-12 bg-white"
+                  placeholder={t('invoices.allocation_number_placeholder')}
+                  value={formData.allocationNumber}
+                  onChange={(e) => setFormData({ ...formData, allocationNumber: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Status + Date — side by side on mobile too */}
           <div className="grid grid-cols-2 gap-3">

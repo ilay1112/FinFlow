@@ -1,4 +1,38 @@
-import type { Invoice, InvoiceItem, DocumentType } from '../context/FinanceContext';
+import type { Invoice, InvoiceItem, DocumentType, PaymentMethod } from '../context/FinanceContext';
+
+/**
+ * Single source of truth mapping each document type to its i18n key. Consumed by
+ * the invoice form and the PDF template so the displayed label never diverges.
+ */
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  TaxInvoice: 'invoices.doc_tax_invoice',
+  Receipt: 'invoices.doc_receipt',
+  TaxInvoiceReceipt: 'invoices.doc_tax_invoice_receipt',
+  TransactionInvoice: 'invoices.doc_transaction_invoice',
+};
+
+/** Single source of truth mapping each payment method to its i18n key. */
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  Cash: 'invoices.payment_cash',
+  Digital: 'invoices.payment_digital',
+  Card: 'invoices.payment_card',
+  BankWire: 'invoices.payment_bank_wire',
+};
+
+/** Selectable payment methods, in display order. */
+export const PAYMENT_METHODS: PaymentMethod[] = ['Cash', 'Digital', 'Card', 'BankWire'];
+
+/**
+ * Legal original/copy designation for a generated document. The first PDF issued
+ * for a document is the מקור (original); any re-download or re-send afterwards is
+ * an העתק (copy). A document counts as already issued once it has a first-issue
+ * timestamp, a persisted PDF (pdfUrl) or a send timestamp (sentAt).
+ */
+export function resolveCopyType(
+  invoice: Pick<Invoice, 'firstIssuedAt' | 'pdfUrl' | 'sentAt'>
+): 'original' | 'copy' {
+  return invoice.firstIssuedAt || invoice.pdfUrl || invoice.sentAt ? 'copy' : 'original';
+}
 
 export interface InvoiceTotals {
   subtotal: number;

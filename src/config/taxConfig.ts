@@ -62,10 +62,8 @@ export interface TaxBracket {
 /**
  * Progressive income-tax brackets by effective date.
  *
- * NOTE: these numbers were relocated UNCHANGED from src/utils/utils.ts. They are
- * labelled 2026 but predate the 2026-03-30 widening of the 20%/31% bands; that
- * re-verification is blocked on advisor figures (report Open Question 2) and is
- * intentionally NOT done here. Date the table now, correct the numbers later.
+ * The figures below match the 2026 brackets as widened by Amendment 288. A
+ * רו"ח / יועץ מס review is still warranted before relying on tax estimates.
  */
 const INCOME_TAX_BRACKETS_TABLE: DatedValue<TaxBracket[]>[] = [
   {

@@ -12,6 +12,7 @@ import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { useCurrencyFormatter } from '../utils/format';
+import { resolveCopyType } from '../utils/invoiceMath';
 
 interface Props {
   invoice: Invoice;
@@ -31,6 +32,9 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
   const [phone, setPhone] = useState(client?.phone || '');
   const [step, setStep] = useState<Step>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // Capture the original/copy designation once, when the modal opens, before any
+  // send stamps pdfUrl/sentAt — so the rendered template stays stable mid-send.
+  const [copyType] = useState(() => resolveCopyType(invoice));
 
   const formatCurrency = useCurrencyFormatter();
 
@@ -130,7 +134,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
       {/* Hidden template for PDF capture — always rendered while modal is open */}
       <div style={{ position: 'absolute', left: '-10000px', top: '-10000px', zIndex: -1 }}>
         <div id={TEMPLATE_ID}>
-          <InvoiceTemplate invoice={invoice} business={businessSettings} />
+          <InvoiceTemplate invoice={invoice} business={businessSettings} copyType={copyType} />
         </div>
       </div>
 

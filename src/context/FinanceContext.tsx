@@ -7,6 +7,9 @@ import { computeTotals, allocateInvoiceId, seedDocCounters } from '../utils/invo
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
 
+/** How the customer paid for the document. */
+export type PaymentMethod = 'Cash' | 'Digital' | 'Card' | 'BankWire';
+
 export interface BusinessSettings {
   name: string;
   idNumber: string;
@@ -81,14 +84,23 @@ export interface Invoice {
   total: number;
   status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded' | 'Cancelled';
   documentType?: DocumentType;
+  /** How the customer paid. Optional for backward-compat with pre-field invoices. */
+  paymentMethod?: PaymentMethod;
   pdfUrl?: string;
   sentAt?: string;
   /**
-   * Israeli allocation number (מספר הקצאה) obtained in real time from the ITA
-   * for tax invoices at/above the dated threshold (Phase 4 — NOT implemented).
-   * The field exists now so the data model is forward-compatible; populating it
-   * is blocked on the server-side ITA integration architecture decision. See the
-   * integration seam in addInvoice.
+   * ISO timestamp of the first time a PDF was generated for this document (download
+   * or send). Drives the legal מקור / העתק designation: the first issue is the
+   * original, every later one is a copy.
+   */
+  firstIssuedAt?: string;
+  /**
+   * Israeli allocation number (מספר הקצאה) from the ITA, legally required on a tax
+   * invoice at/above the dated threshold for the buyer to deduct input VAT.
+   *
+   * There is no backend, so this is captured manually (INTERIM flow): the issuer
+   * obtains the number from the ITA portal and enters it on the invoice form. A
+   * future server-side integration can populate it automatically at issue time.
    */
   allocationNumber?: string;
 }
@@ -414,11 +426,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const counters = seedDocCounters(invoices, businessSettings.docCounters);
     const { id, counters: nextCounters } = allocateInvoiceId(counters, invoice.documentType);
 
-    // Phase 4 integration seam (NOT implemented — blocked on architecture decision):
-    // for a TaxInvoice / TaxInvoiceReceipt whose pre-VAT subtotal is at/above the
+    // For a TaxInvoice / TaxInvoiceReceipt whose pre-VAT subtotal is at/above the
     // dated allocation threshold (see getAllocationThreshold in src/config/taxConfig.ts),
-    // an allocation number (מספר הקצאה) must be obtained in real time from the ITA
-    // and assigned to newInvoice.allocationNumber before the document is issued.
+    // an allocation number (מספר הקצאה) is legally required from the ITA. With no
+    // backend, this is captured manually on the invoice form and flows through on the
+    // `invoice` payload below. A future server-side integration can fetch it in real
+    // time at this seam before the document is issued.
 
     const newInvoice: Invoice = { ...invoice, id, total };
 

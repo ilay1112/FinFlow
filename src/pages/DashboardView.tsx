@@ -138,7 +138,9 @@ export default function DashboardView() {
 
   // Esek Zair Normative Deduction (30% of revenue)
   const taxableIncome = currentRevenue - (currentRevenue * NORMATIVE_DEDUCTION_RATE);
-  const estimatedTax = calculateProgressiveTax(taxableIncome);
+  // Resolve the brackets against the selected period's tax year explicitly, so the
+  // date-keyed config returns that year's table rather than defaulting to "today".
+  const estimatedTax = calculateProgressiveTax(taxableIncome, `${end.getFullYear()}-12-31`);
 
   const calculateChange = (current: number, previous: number) => {
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Invoice, type BusinessSettings } from '../../context/FinanceContext';
-import { computeTotals } from '../../utils/invoiceMath';
+import { computeTotals, DOCUMENT_TYPE_LABELS, PAYMENT_METHOD_LABELS } from '../../utils/invoiceMath';
 import { useCurrencyFormatter } from '../../utils/format';
 
 interface InvoiceTemplateProps {
@@ -42,10 +42,8 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
       {/* Header */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-slate-900 uppercase tracking-tight">
-          {invoice.documentType === 'Receipt' ? t('invoices.doc_receipt')
-            : invoice.documentType === 'TaxInvoiceReceipt' ? t('invoices.doc_tax_invoice_receipt')
-            : invoice.documentType === 'TransactionInvoice' ? t('invoices.doc_transaction_invoice')
-            : invoice.documentType === 'TaxInvoice' ? t('invoices.doc_tax_invoice')
+          {invoice.documentType
+            ? t(DOCUMENT_TYPE_LABELS[invoice.documentType])
             : business.type === 'EsekPatur' ? t('invoices.receipt_title')
             : t('invoices.tax_invoice_title')}
         </h1>
@@ -81,6 +79,16 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
             <p className="text-sm font-bold text-slate-900">
               {t('invoices.due_date')}: <Ltr>{invoice.dueDate}</Ltr>
             </p>
+            {invoice.paymentMethod && (
+              <p className="text-sm font-bold text-slate-900">
+                {t('invoices.payment_method')}: {t(PAYMENT_METHOD_LABELS[invoice.paymentMethod])}
+              </p>
+            )}
+            {invoice.allocationNumber && (
+              <p className="text-sm font-bold text-slate-900">
+                {t('invoices.allocation_number')}: <Ltr>{invoice.allocationNumber}</Ltr>
+              </p>
+            )}
           </div>
         </div>
       </div>
