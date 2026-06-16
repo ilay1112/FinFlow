@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 .vite
 .env.local
+
+# Native platforms
+android/
+ios/
+
+# AI tool configs
+.gemini/
