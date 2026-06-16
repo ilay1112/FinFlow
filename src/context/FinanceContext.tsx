@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
 import * as googleDrive from '../services/googleDrive';
-import { computeTotals, nextInvoiceId } from '../utils/invoiceMath';
+import { computeTotals, allocateInvoiceId, seedDocCounters } from '../utils/invoiceMath';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -14,6 +14,14 @@ export interface BusinessSettings {
   phone: string;
   email: string;
   type: BusinessType;
+  /**
+   * Persisted, monotonic gapless counter per legal document type (1a). The next
+   * document of a given type is `(docCounters[type] ?? 0) + 1` — never derived
+   * from the invoices array, so a delete/cancel never frees a number and a Drive
+   * sync race can't double-allocate (the increment goes through the same
+   * optimistic-concurrency save guard as every other state change).
+   */
+  docCounters?: Partial<Record<DocumentType, number>>;
 }
 
 export interface Expense {
@@ -35,6 +43,8 @@ export interface Client {
   phone: string;
   address: string;
   totalBilled: number;
+  /** Israeli tax ID (ע.מ / ח.פ / ת.ז). Required on tax invoices for business customers. */
+  idNumber?: string;
 }
 
 export interface BookingAgent {
@@ -59,6 +69,8 @@ export interface Invoice {
   id: string;
   clientId: string;
   clientName: string;
+  /** Snapshot of the customer's tax ID at issue time (1b) — never re-derived from the client record. */
+  clientIdNumber?: string;
   bookingAgentId?: string;
   bookingAgentName?: string;
   commissionAmount?: number;
@@ -67,10 +79,18 @@ export interface Invoice {
   items: InvoiceItem[];
   taxRate: number;
   total: number;
-  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded';
+  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded' | 'Cancelled';
   documentType?: DocumentType;
   pdfUrl?: string;
   sentAt?: string;
+  /**
+   * Israeli allocation number (מספר הקצאה) obtained in real time from the ITA
+   * for tax invoices at/above the dated threshold (Phase 4 — NOT implemented).
+   * The field exists now so the data model is forward-compatible; populating it
+   * is blocked on the server-side ITA integration architecture decision. See the
+   * integration seam in addInvoice.
+   */
+  allocationNumber?: string;
 }
 
 interface FinanceContextType {
@@ -216,15 +236,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const driveData = await googleDrive.fetchAppState(accessToken, fileId);
           driveVersion.current = await googleDrive.getFileVersion(accessToken, fileId);
 
+          const loadedInvoices = (driveData.invoices || []) as unknown as Invoice[];
           setExpenses((driveData.expenses || []) as unknown as Expense[]);
           setCategories(driveData.categories || DEFAULT_CATEGORIES);
           setClients((driveData.clients || []) as unknown as Client[]);
           setBookingAgents((driveData.bookingAgents || []) as unknown as BookingAgent[]);
-          setInvoices((driveData.invoices || []) as unknown as Invoice[]);
-          setBusinessSettings({
+          setInvoices(loadedInvoices);
+          const loadedSettings = {
             ...DEFAULT_BUSINESS_SETTINGS,
             ...(driveData.businessSettings || {})
-          } as BusinessSettings);
+          } as BusinessSettings;
+          // 1a migration: seed the gapless per-type counters from existing documents
+          // the first time we load a workspace that predates them, so the next
+          // document continues each series without reusing a number.
+          setBusinessSettings({
+            ...loadedSettings,
+            docCounters: seedDocCounters(loadedInvoices, loadedSettings.docCounters),
+          });
           
           localStorage.setItem('finance_active_business', JSON.stringify(activeBusiness));
           // Mark this workspace's data as loaded — only now is it safe to persist.
@@ -309,6 +337,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteExpense = async (id: string) => {
+    // NOTE (6a / 7-year retention): this hard-deletes the expense and its Drive
+    // receipt file. Receipts are retention-significant vouchers; deletion is kept
+    // available for now (lower stakes than issued tax documents) but is gated
+    // behind a confirm in the UI. If full compliance is required later, switch
+    // this to a soft-retain/archive flow like issued invoices.
     const expense = expenses.find(e => e.id === id);
     if (expense?.receiptUrl && isAuthenticated && accessToken) {
       try {
@@ -371,15 +404,32 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addInvoice = (invoice: Omit<Invoice, 'id' | 'total'>) => {
     const { total } = computeTotals(invoice.items, invoice.taxRate);
-    const newInvoice = { ...invoice, id: nextInvoiceId(invoices, invoice.documentType), total };
+
+    // 1a — allocate the next gapless number from the persisted per-type counter,
+    // never from the invoices array. Seed the counter from existing documents on
+    // first use (defensive; the Drive load path also seeds on migration). The
+    // updated counters are written into businessSettings so the increment is
+    // persisted through the same optimistic-concurrency save guard, preventing a
+    // concurrent device from double-allocating the same number.
+    const counters = seedDocCounters(invoices, businessSettings.docCounters);
+    const { id, counters: nextCounters } = allocateInvoiceId(counters, invoice.documentType);
+
+    // Phase 4 integration seam (NOT implemented — blocked on architecture decision):
+    // for a TaxInvoice / TaxInvoiceReceipt whose pre-VAT subtotal is at/above the
+    // dated allocation threshold (see getAllocationThreshold in src/config/taxConfig.ts),
+    // an allocation number (מספר הקצאה) must be obtained in real time from the ITA
+    // and assigned to newInvoice.allocationNumber before the document is issued.
+
+    const newInvoice: Invoice = { ...invoice, id, total };
 
     setInvoices(prev => [newInvoice, ...prev]);
-    setClients(prev => prev.map(c => 
+    setBusinessSettings(prev => ({ ...prev, docCounters: nextCounters }));
+    setClients(prev => prev.map(c =>
       c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
     ));
 
     if (invoice.bookingAgentId && invoice.commissionAmount) {
-      setBookingAgents(prev => prev.map(a => 
+      setBookingAgents(prev => prev.map(a =>
         a.id === invoice.bookingAgentId ? { ...a, totalCommissions: a.totalCommissions + invoice.commissionAmount! } : a
       ));
     }
@@ -453,21 +503,39 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  /**
+   * 6a — issued tax documents (anything not in Draft) must be RETAINED (7-year
+   * rule) and keep occupying their gapless sequence number, so they are never
+   * hard-deleted: they transition to `Cancelled` instead. Only Drafts — which are
+   * not yet legal documents — may be hard-removed.
+   */
   const deleteInvoice = (id: string) => {
     const invoice = invoices.find(i => i.id === id);
-    if (invoice) {
-      if (invoice.status !== 'Refunded') {
-        setClients(prev => prev.map(c => 
-          c.id === invoice.clientId ? { ...c, totalBilled: Math.max(0, c.totalBilled - invoice.total) } : c
-        ));
-      }
+    if (!invoice) return;
+
+    // Reverse this document's contribution to client billing / agent commissions
+    // unless it was already excluded (Refunded/Cancelled never counted).
+    const alreadyExcluded = invoice.status === 'Refunded' || invoice.status === 'Cancelled';
+    if (!alreadyExcluded) {
+      setClients(prev => prev.map(c =>
+        c.id === invoice.clientId ? { ...c, totalBilled: Math.max(0, c.totalBilled - invoice.total) } : c
+      ));
       if (invoice.bookingAgentId && invoice.commissionAmount) {
-        setBookingAgents(prev => prev.map(a => 
+        setBookingAgents(prev => prev.map(a =>
           a.id === invoice.bookingAgentId ? { ...a, totalCommissions: Math.max(0, a.totalCommissions - invoice.commissionAmount!) } : a
         ));
       }
     }
-    setInvoices(prev => prev.filter(inv => inv.id !== id));
+
+    if (invoice.status === 'Draft') {
+      // Not a legal document yet — safe to hard-delete.
+      setInvoices(prev => prev.filter(inv => inv.id !== id));
+    } else {
+      // Issued document — retain it, just mark it cancelled.
+      setInvoices(prev => prev.map(inv =>
+        inv.id === id ? { ...inv, status: 'Cancelled' } : inv
+      ));
+    }
   };
 
   const addCategory = (category: string) => {

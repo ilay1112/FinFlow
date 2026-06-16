@@ -15,6 +15,7 @@ import {
   Loader2,
   RotateCcw,
   Mail,
+  Ban,
 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
 import { generateInvoicePDF, waitForTemplateReady } from '../services/pdf/invoice-service';
@@ -35,7 +36,7 @@ export default function InvoicesView() {
   const navigate = useNavigate();
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [isRefundAlertOpen, setIsRefundAlertOpen] = useState(false);
-  const [invoiceToDelete, setInvoiceToDelete] = useState<string | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
   const [invoiceToRefund, setInvoiceToRefund] = useState<Invoice | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sendInvoice, setSendInvoice] = useState<Invoice | null>(null);
@@ -73,17 +74,21 @@ export default function InvoicesView() {
   const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + i.total, 0);
   const totalRefunded = invoices.filter(i => i.status === 'Refunded').reduce((sum, i) => sum + i.total, 0);
 
-  const handleOpenDeleteAlert = (id: string) => {
-    setInvoiceToDelete(id);
+  const handleOpenDeleteAlert = (invoice: Invoice) => {
+    setInvoiceToDelete(invoice);
     setIsDeleteAlertOpen(true);
   };
 
   const confirmDelete = () => {
     if (invoiceToDelete) {
-      deleteInvoice(invoiceToDelete);
+      // deleteInvoice hard-deletes Drafts and cancels (retains) issued documents.
+      deleteInvoice(invoiceToDelete.id);
       setInvoiceToDelete(null);
     }
   };
+
+  // Issued (non-Draft) documents are cancelled, not deleted — 7-year retention (6a).
+  const isIssuedDocument = invoiceToDelete ? invoiceToDelete.status !== 'Draft' : false;
 
   const handleOpenRefundAlert = (invoice: Invoice) => {
     setInvoiceToRefund(invoice);
@@ -125,6 +130,7 @@ export default function InvoicesView() {
     switch (status) {
       case 'Paid': return <Badge variant="success" className="gap-1"><CheckCircle className="h-3 w-3" /> {t('invoices.paid')}</Badge>;
       case 'Refunded': return <Badge variant="outline" className="gap-1 bg-slate-100 text-slate-600 border-slate-200"><RotateCcw className="h-3 w-3" /> {t('invoices.refunded')}</Badge>;
+      case 'Cancelled': return <Badge variant="outline" className="gap-1 bg-slate-100 text-slate-500 border-slate-200"><Ban className="h-3 w-3" /> {t('invoices.cancelled')}</Badge>;
       case 'Sent': return <Badge variant="secondary" className="gap-1"><Send className="h-3 w-3" /> {t('invoices.sent')}</Badge>;
       case 'Overdue': return <Badge variant="destructive" className="gap-1"><Clock className="h-3 w-3" /> {t('invoices.overdue')}</Badge>;
       default: return <Badge variant="outline">{t('invoices.draft')}</Badge>;
@@ -308,14 +314,16 @@ export default function InvoicesView() {
                           >
                             <Edit2 className="h-5 w-5 md:h-4 md:w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-10 w-10 md:h-8 md:w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => handleOpenDeleteAlert(invoice.id)}
-                            title={t('common.delete')}
+                            onClick={() => handleOpenDeleteAlert(invoice)}
+                            title={invoice.status === 'Draft' ? t('common.delete') : t('invoices.cancel_document')}
                           >
-                            <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
+                            {invoice.status === 'Draft'
+                              ? <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
+                              : <Ban className="h-5 w-5 md:h-4 md:w-4" />}
                           </Button>
                         </div>
                       </TableCell>
@@ -334,13 +342,13 @@ export default function InvoicesView() {
         </CardContent>
       </Card>
 
-      <AlertDialog 
+      <AlertDialog
         isOpen={isDeleteAlertOpen}
         onClose={() => setIsDeleteAlertOpen(false)}
         onConfirm={confirmDelete}
-        title={t('invoices.delete_title')}
-        description={t('invoices.delete_description')}
-        confirmText={t('common.delete')}
+        title={isIssuedDocument ? t('invoices.cancel_title') : t('invoices.delete_title')}
+        description={isIssuedDocument ? t('invoices.cancel_description') : t('invoices.delete_description')}
+        confirmText={isIssuedDocument ? t('invoices.cancel_document') : t('common.delete')}
         variant="destructive"
       />
 

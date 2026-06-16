@@ -230,8 +230,25 @@ export function mergeAppState(local: AppState, remote: AppState): AppState {
     invoices: mergeById(local.invoices || [], remote.invoices || []),
     bookingAgents: mergeById(local.bookingAgents || [], remote.bookingAgents || []),
     categories: Array.from(new Set([...(remote.categories || []), ...(local.categories || [])])),
-    businessSettings: local.businessSettings,
+    businessSettings: mergeBusinessSettings(local.businessSettings, remote.businessSettings),
   };
+}
+
+/**
+ * businessSettings is local-wins (the editing device's profile), EXCEPT the
+ * gapless document counters (1a), which must be max-merged: if two devices each
+ * advanced a counter while offline, taking the higher value prevents the next
+ * document from reusing a number the other device already issued.
+ */
+function mergeBusinessSettings(local: BusinessSettings, remote: BusinessSettings): BusinessSettings {
+  const localCounters = local?.docCounters || {};
+  const remoteCounters = remote?.docCounters || {};
+  const mergedCounters: BusinessSettings['docCounters'] = { ...localCounters };
+  for (const [type, value] of Object.entries(remoteCounters) as [keyof typeof remoteCounters, number][]) {
+    const localValue = mergedCounters[type] ?? 0;
+    if (value > localValue) mergedCounters[type] = value;
+  }
+  return { ...local, docCounters: mergedCounters };
 }
 
 /**

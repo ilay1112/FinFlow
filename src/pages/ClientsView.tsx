@@ -44,11 +44,12 @@ export default function ClientsView() {
     
     if (action === 'new') {
       setEditingClient(null);
-      setFormData({ 
-        name: nameParam || '', 
-        email: '', 
-        phone: '', 
-        address: '' 
+      setFormData({
+        name: nameParam || '',
+        email: '',
+        phone: '',
+        address: '',
+        idNumber: ''
       });
       setIsModalOpen(true);
       
@@ -62,7 +63,8 @@ export default function ClientsView() {
     name: '',
     email: '',
     phone: '',
-    address: ''
+    address: '',
+    idNumber: ''
   });
 
   const filteredClients = clients.filter(c => 
@@ -81,11 +83,12 @@ export default function ClientsView() {
         name: client.name,
         email: client.email,
         phone: client.phone,
-        address: client.address
+        address: client.address,
+        idNumber: client.idNumber || ''
       });
     } else {
       setEditingClient(null);
-      setFormData({ name: '', email: '', phone: '', address: '' });
+      setFormData({ name: '', email: '', phone: '', address: '', idNumber: '' });
     }
     setIsModalOpen(true);
   };
@@ -306,11 +309,20 @@ export default function ClientsView() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('clients.address_label')}</label>
-              <Input 
+              <Input
                 placeholder={t('clients.address_placeholder')}
                 className="h-11 md:h-10"
                 value={formData.address}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('clients.id_number_label')}</label>
+              <Input
+                placeholder={t('clients.id_number_placeholder')}
+                className="h-11 md:h-10"
+                value={formData.idNumber}
+                onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
               />
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">

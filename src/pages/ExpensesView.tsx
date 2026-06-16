@@ -163,6 +163,11 @@ export default function ExpensesView() {
 
   const confirmDelete = async () => {
     if (expenseToDelete) {
+      // 6a — deleting an expense also removes its receipt file from Drive
+      // (in deleteExpense). Receipts/vouchers are subject to the 7-year retention
+      // rule; this destructive action is intentionally kept available for now
+      // (lower stakes than issued tax documents) but is gated behind this confirm,
+      // which warns about the irreversible deletion of the retained receipt.
       await deleteExpense(expenseToDelete);
       setExpenseToDelete(null);
     }

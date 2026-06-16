@@ -8,19 +8,30 @@ import { useCurrencyFormatter } from '../utils/format';
 
 export default function TaxesView() {
   const { t } = useTranslation();
-  const { expenses, invoices } = useFinance();
+  const { expenses, invoices, businessSettings } = useFinance();
 
   const totalRevenue = invoices
     .filter(i => i.status === 'Paid')
     .reduce((sum, i) => sum + i.total, 0);
-  
+
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  
-  // Israeli Esek Zair Normative Deduction (30% of revenue)
-  const deductibleExpenses = totalRevenue * NORMATIVE_DEDUCTION_RATE;
-  
+
+  // 3a — the 30% Esek Zair normative deduction applies ONLY to qualifying small
+  // businesses (Esek Patur / small Esek Zair), never to a Company. A Company
+  // deducts its ACTUAL tracked expenses.
+  //
+  // TODO (advisor-blocked): there is also a qualifying-income ceiling that gates
+  // the 30% for the self-employed. The exact 2026 figure is an open question, so
+  // we currently gate by business TYPE only. Add the ceiling check once the
+  // figure is confirmed (report Open Question 3).
+  const isQualifyingSmallBusiness = businessSettings.type !== 'Company';
+  const deductibleExpenses = isQualifyingSmallBusiness
+    ? totalRevenue * NORMATIVE_DEDUCTION_RATE
+    : totalExpenses;
+
   const netProfit = totalRevenue - totalExpenses;
   const taxableIncome = totalRevenue - deductibleExpenses;
+  // Income tax only — excludes ביטוח לאומי / מס בריאות / מקדמות (3b: label only).
   const estimatedTax = calculateProgressiveTax(taxableIncome);
 
   const formatCurrency = useCurrencyFormatter();
@@ -39,10 +50,10 @@ export default function TaxesView() {
             <CardContent className="pt-8 pb-8">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                 <div>
-                  <p className="text-primary-foreground/80 text-sm font-medium uppercase tracking-wider">{t('dashboard.tax_liability')}</p>
+                  <p className="text-primary-foreground/80 text-sm font-medium uppercase tracking-wider">{t('taxes.income_tax_estimate')}</p>
                   <h2 className="text-5xl font-bold mt-2">{formatCurrency(estimatedTax)}</h2>
                   <p className="text-primary-foreground/60 text-xs mt-4 flex items-center gap-1">
-                    <Info className="h-3 w-3" /> {t('dashboard.progressive_tax')}
+                    <Info className="h-3 w-3" /> {t('taxes.income_tax_only_note')}
                   </p>
                 </div>
                 <div className="bg-white/10 p-6 rounded-2xl backdrop-blur-md border border-white/20 w-full md:w-auto">

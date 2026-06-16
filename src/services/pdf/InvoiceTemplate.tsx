@@ -7,6 +7,11 @@ import { useCurrencyFormatter } from '../../utils/format';
 interface InvoiceTemplateProps {
   invoice: Invoice;
   business: BusinessSettings;
+  /**
+   * Legal copy designation (מקור / העתק). Israeli tax invoices must be marked as
+   * an original or a copy. Defaults to the original.
+   */
+  copyType?: 'original' | 'copy';
 }
 
 // Helper to force LTR direction for numbers/IDs in RTL context
@@ -19,7 +24,7 @@ const Ltr = ({ children }: { children: React.ReactNode }) => (
  * We use explicit dir="ltr" and inline-block on numbers to ensure 
  * html2canvas captures them in the correct order, even in Hebrew RTL mode.
  */
-export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, business }) => {
+export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, business, copyType = 'original' }) => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'he';
 
@@ -44,6 +49,10 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
             : business.type === 'EsekPatur' ? t('invoices.receipt_title')
             : t('invoices.tax_invoice_title')}
         </h1>
+        {/* מקור / העתק — mandatory original/copy designation on a tax invoice. */}
+        <p className="mt-2 text-sm font-bold uppercase tracking-widest text-slate-500">
+          {copyType === 'copy' ? t('invoices.copy_label') : t('invoices.original_label')}
+        </p>
       </div>
 
       {/* Info Sections */}
@@ -80,6 +89,11 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
       <div className="mb-12 p-6 bg-slate-50 rounded-2xl border border-slate-100">
         <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">{t('invoices.client')}</p>
         <p className="text-xl font-bold text-slate-900">{invoice.clientName}</p>
+        {invoice.clientIdNumber && (
+          <p className="text-sm text-slate-600 mt-1">
+            {t('profile.id_number')}: <Ltr>{invoice.clientIdNumber}</Ltr>
+          </p>
+        )}
       </div>
 
       {/* Table */}

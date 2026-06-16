@@ -15,6 +15,14 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useCurrencyFormatter } from '../utils/format';
 import { computeTotals, computeCommission } from '../utils/invoiceMath';
+import { getVatRate } from '../config/taxConfig';
+
+const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  TaxInvoice: 'invoices.doc_tax_invoice',
+  Receipt: 'invoices.doc_receipt',
+  TaxInvoiceReceipt: 'invoices.doc_tax_invoice_receipt',
+  TransactionInvoice: 'invoices.doc_transaction_invoice',
+};
 
 interface InvoiceFormData {
   clientId: string;
@@ -39,6 +47,12 @@ export default function InvoiceFormPage() {
 
   const isPatur = businessSettings.type === 'EsekPatur';
 
+  // 2a — Esek Patur may NOT issue a tax invoice (חשבונית מס). Restrict the
+  // available document types to קבלה (Receipt) and חשבון עסקה (TransactionInvoice).
+  const allowedDocumentTypes: DocumentType[] = isPatur
+    ? ['Receipt', 'TransactionInvoice']
+    : ['TaxInvoice', 'Receipt', 'TaxInvoiceReceipt', 'TransactionInvoice'];
+
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -53,7 +67,10 @@ export default function InvoiceFormPage() {
     if (editingInvoice) {
       return {
         clientId: editingInvoice.clientId,
-        documentType: editingInvoice.documentType ?? (isPatur ? 'Receipt' : 'TaxInvoice'),
+        documentType:
+          editingInvoice.documentType && allowedDocumentTypes.includes(editingInvoice.documentType)
+            ? editingInvoice.documentType
+            : (isPatur ? 'Receipt' : 'TaxInvoice'),
         bookingAgentId: editingInvoice.bookingAgentId || '',
         commissionAmount: editingInvoice.commissionAmount || 0,
         date: editingInvoice.date,
@@ -71,7 +88,7 @@ export default function InvoiceFormPage() {
       date: today,
       dueDate: today,
       items: [{ id: Date.now().toString(), description: '', quantity: 1, unitPrice: '' }],
-      taxRate: isPatur ? 0 : 18,
+      taxRate: isPatur ? 0 : getVatRate(today),
       status: 'Paid',
     };
   });
@@ -112,7 +129,9 @@ export default function InvoiceFormPage() {
     ).slice(0, 5);
   }, [bookingAgents, agentSearchTerm]);
 
-  const activeTaxRate = isPatur ? 0 : 18;
+  // VAT is resolved from the dated config by the invoice's own issue date, so an
+  // invoice always uses the rate that legally applied when it was issued.
+  const activeTaxRate = isPatur ? 0 : getVatRate(formData.date);
   const { subtotal, taxAmount, total } = computeTotals(
     formData.items.map(item => ({ quantity: item.quantity, unitPrice: Number(item.unitPrice) || 0 })),
     activeTaxRate
@@ -137,17 +156,26 @@ export default function InvoiceFormPage() {
 
     let currentClientId = formData.clientId;
     let currentClientName = '';
+    // Snapshot of the customer's tax ID at issue time (1b) — see below.
+    let currentClientIdNumber: string | undefined;
 
     const existingClient = clients.find(c => c.id === currentClientId || c.name === clientSearchTerm);
     if (existingClient) {
       currentClientId = existingClient.id;
       currentClientName = existingClient.name;
+      currentClientIdNumber = existingClient.idNumber;
     } else if (clientSearchTerm.trim()) {
       currentClientId = 'casual';
       currentClientName = clientSearchTerm.trim();
     } else {
       return;
     }
+
+    // 2a defense-in-depth: never let a disallowed document type reach state, even
+    // if a stale value slipped through (e.g. editing a legacy Patur tax invoice).
+    const documentType: DocumentType = allowedDocumentTypes.includes(formData.documentType)
+      ? formData.documentType
+      : allowedDocumentTypes[0];
 
     let currentAgentId = formData.bookingAgentId;
     let currentAgentName = '';
@@ -173,7 +201,10 @@ export default function InvoiceFormPage() {
     const invoiceData = {
       clientId: currentClientId,
       clientName: currentClientName,
-      documentType: formData.documentType,
+      // Snapshot the customer's tax ID onto the document at issue time so later
+      // edits to the client record never mutate an already-issued legal document.
+      clientIdNumber: currentClientIdNumber,
+      documentType,
       bookingAgentId: currentAgentId || undefined,
       bookingAgentName: currentAgentName || undefined,
       commissionAmount: commission || undefined,
@@ -280,10 +311,9 @@ export default function InvoiceFormPage() {
               value={formData.documentType}
               onChange={(e) => setFormData({ ...formData, documentType: e.target.value as DocumentType })}
             >
-              <option value="TaxInvoice">{t('invoices.doc_tax_invoice')}</option>
-              <option value="Receipt">{t('invoices.doc_receipt')}</option>
-              <option value="TaxInvoiceReceipt">{t('invoices.doc_tax_invoice_receipt')}</option>
-              <option value="TransactionInvoice">{t('invoices.doc_transaction_invoice')}</option>
+              {allowedDocumentTypes.map(type => (
+                <option key={type} value={type}>{t(DOCUMENT_TYPE_LABELS[type])}</option>
+              ))}
             </select>
           </div>
 
