@@ -139,7 +139,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const driveFileId = useRef<string | null>(null);
   const driveVersion = useRef<string | null>(null);
-  const isInitialLoad = useRef(true);
+  // Id of the workspace whose data is currently loaded into state. Persistence is
+  // gated on this matching activeBusiness, so during a workspace switch we never
+  // write the previous workspace's data into the new workspace's app_data.json.
+  const loadedBusinessId = useRef<string | null>(null);
 
   // Initial Load from LocalStorage (Fallback)
   useEffect(() => {
@@ -224,7 +227,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } as BusinessSettings);
           
           localStorage.setItem('finance_active_business', JSON.stringify(activeBusiness));
-          isInitialLoad.current = false;
+          // Mark this workspace's data as loaded — only now is it safe to persist.
+          loadedBusinessId.current = activeBusiness.id;
         } catch (error) {
           const err = error as Error;
           console.error('Drive Sync Error:', err);
@@ -241,7 +245,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Persistent LocalStorage and Auto-Save to Drive
   useEffect(() => {
     if (!activeBusiness) return;
-    
+    // Skip persisting until the in-memory state actually belongs to the active
+    // workspace. During a switch the previous workspace's data is still in state
+    // until syncFromDrive finishes loading; persisting here would leak it into the
+    // newly selected workspace's app_data.json (and localStorage cache).
+    if (loadedBusinessId.current !== activeBusiness.id) return;
+
     // Always save to localStorage as backup
     try {
       localStorage.setItem('finance_expenses', JSON.stringify(expenses));
@@ -254,8 +263,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Could not save finance data to localStorage', storageError);
     }
 
-    // Save to Drive if authenticated and not during initial fetch
-    if (isAuthenticated && accessToken && driveFileId.current && !isInitialLoad.current) {
+    // Save to Drive if authenticated
+    if (isAuthenticated && accessToken && driveFileId.current) {
       const timer = setTimeout(async () => {
         setIsSyncing(true);
         try {
