@@ -1,4 +1,11 @@
-import type { Invoice, InvoiceItem, DocumentType, PaymentMethod } from '../context/FinanceContext';
+import type {
+  Invoice,
+  InvoiceItem,
+  DocumentType,
+  PaymentMethod,
+  PaymentLine,
+} from '../context/FinanceContext';
+import type { CashLimit } from '../config/taxConfig';
 
 /**
  * Single source of truth mapping each document type to its i18n key. Consumed by
@@ -57,6 +64,105 @@ export function computeCommission(
 ): number {
   const calc = subtotal * (agent.commissionRate / 100);
   return agent.minCommission && calc < agent.minCommission ? agent.minCommission : calc;
+}
+
+// ---------------------------------------------------------------------------
+// Cash Law compliance & multi-method payments (CASH_LAW_PAYMENTS_SPEC.md)
+// ---------------------------------------------------------------------------
+
+/** Float tolerance (₪0.01) for all payment equality / over-cap comparisons. */
+const PAYMENT_EPS = 0.01;
+
+/**
+ * Whether a document type RECORDS actual receipt of payment (קבלה / חשבונית
+ * מס-קבלה). Only these carry `paymentLines` and are subject to the Cash Law cash
+ * cap. TaxInvoice / TransactionInvoice are demand/pro-forma documents and do not.
+ */
+export function recordsPayment(documentType?: DocumentType): boolean {
+  return documentType === 'Receipt' || documentType === 'TaxInvoiceReceipt';
+}
+
+/** Total tendered across all payment lines. */
+export function sumPayments(lines: PaymentLine[]): number {
+  return lines.reduce((sum, line) => sum + (line.amount || 0), 0);
+}
+
+/** Total tendered specifically as cash. */
+export function sumCashPayments(lines: PaymentLine[]): number {
+  return lines.reduce((sum, line) => sum + (line.method === 'Cash' ? line.amount || 0 : 0), 0);
+}
+
+/**
+ * The legal cash cap for a deal under the Cash Law: the LOWER of the flat cap and
+ * the fraction-of-deal cap. The 10% fraction binds below ₪60,000; the flat ₪6,000
+ * binds at/above it. The caller resolves `limit` via getCashLimit(date) so this
+ * stays pure and config-agnostic.
+ */
+export function cashCapForTotal(total: number, limit: CashLimit): number {
+  return Math.min(limit.flatCap, limit.dealFraction * total);
+}
+
+/**
+ * `total - sumPayments(lines)`. Positive = still to allocate; negative =
+ * over-allocated.
+ */
+export function remainingToAllocate(total: number, lines: PaymentLine[]): number {
+  return total - sumPayments(lines);
+}
+
+/** Result of validating a payment-recording document's payment lines against a total. */
+export interface PaymentValidation {
+  /** `|remaining| <= EPS` — lines sum to the total within tolerance. */
+  balanced: boolean;
+  /** `total - sumPayments` (signed). */
+  remaining: number;
+  /** The effective cash cap, `min(flatCap, dealFraction * total)`. */
+  cashCap: number;
+  /** Total tendered as cash. */
+  cashTotal: number;
+  /** `cashTotal > cashCap + EPS` — the cash portion breaches the legal cap. */
+  cashOverCap: boolean;
+  /** True iff balanced, not over the cash cap, and every line amount > 0. */
+  ok: boolean;
+}
+
+/**
+ * Single validation entry point for the payment-lines model. Called by the invoice
+ * form (live) and by addInvoice / updateInvoice (defense-in-depth). Pure — the
+ * caller resolves `limit` via getCashLimit(date).
+ */
+export function validatePayments(
+  total: number,
+  lines: PaymentLine[],
+  limit: CashLimit
+): PaymentValidation {
+  const remaining = remainingToAllocate(total, lines);
+  const balanced = Math.abs(remaining) <= PAYMENT_EPS;
+  const cashCap = cashCapForTotal(total, limit);
+  const cashTotal = sumCashPayments(lines);
+  const cashOverCap = cashTotal > cashCap + PAYMENT_EPS;
+  const allPositive = lines.length > 0 && lines.every(line => line.amount > 0);
+  return {
+    balanced,
+    remaining,
+    cashCap,
+    cashTotal,
+    cashOverCap,
+    ok: balanced && !cashOverCap && allPositive,
+  };
+}
+
+/**
+ * Lazily resolves a document's payment lines (read-time migration, §8): prefers the
+ * stored `paymentLines`; otherwise maps a legacy single `paymentMethod` to one
+ * full-total line; otherwise none. Never mutates / rewrites the stored invoice.
+ */
+export function paymentLinesOf(
+  inv: Pick<Invoice, 'paymentLines' | 'paymentMethod' | 'total'>
+): PaymentLine[] {
+  if (inv.paymentLines?.length) return inv.paymentLines;
+  if (inv.paymentMethod) return [{ id: 'legacy', method: inv.paymentMethod, amount: inv.total }];
+  return [];
 }
 
 /**

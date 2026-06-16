@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Invoice, type BusinessSettings } from '../../context/FinanceContext';
-import { computeTotals, DOCUMENT_TYPE_LABELS, PAYMENT_METHOD_LABELS } from '../../utils/invoiceMath';
+import { computeTotals, DOCUMENT_TYPE_LABELS, PAYMENT_METHOD_LABELS, recordsPayment, paymentLinesOf } from '../../utils/invoiceMath';
 import { useCurrencyFormatter } from '../../utils/format';
 
 interface InvoiceTemplateProps {
@@ -31,6 +31,11 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
   const { subtotal, taxAmount } = computeTotals(invoice.items, invoice.taxRate);
 
   const formatCurrency = useCurrencyFormatter();
+
+  // Payment block: only documents that record receipt of payment (Receipt /
+  // TaxInvoiceReceipt) show how the money was tendered. Lines are resolved lazily —
+  // a legacy single `paymentMethod` maps to one full-total line (paymentLinesOf).
+  const paymentLines = recordsPayment(invoice.documentType) ? paymentLinesOf(invoice) : [];
 
   return (
     <div 
@@ -79,10 +84,25 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
             <p className="text-sm font-bold text-slate-900">
               {t('invoices.due_date')}: <Ltr>{invoice.dueDate}</Ltr>
             </p>
-            {invoice.paymentMethod && (
-              <p className="text-sm font-bold text-slate-900">
-                {t('invoices.payment_method')}: {t(PAYMENT_METHOD_LABELS[invoice.paymentMethod])}
-              </p>
+            {paymentLines.length > 0 ? (
+              // Payment-recording document: one row per tendered method. A single
+              // line naturally reads like the old single-method display.
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-slate-900">{t('invoices.payments')}:</p>
+                {paymentLines.map(line => (
+                  <p key={line.id} className="text-sm font-bold text-slate-900">
+                    {t(PAYMENT_METHOD_LABELS[line.method])} — <Ltr>{formatCurrency(line.amount)}</Ltr>
+                  </p>
+                ))}
+              </div>
+            ) : (
+              // Back-compat: a non-payment document that still carries a legacy
+              // single paymentMethod renders the old single line exactly as before.
+              invoice.paymentMethod && (
+                <p className="text-sm font-bold text-slate-900">
+                  {t('invoices.payment_method')}: {t(PAYMENT_METHOD_LABELS[invoice.paymentMethod])}
+                </p>
+              )
             )}
             {invoice.allocationNumber && (
               <p className="text-sm font-bold text-slate-900">

@@ -2,7 +2,14 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
 import * as googleDrive from '../services/googleDrive';
-import { computeTotals, allocateInvoiceId, seedDocCounters } from '../utils/invoiceMath';
+import {
+  computeTotals,
+  allocateInvoiceId,
+  seedDocCounters,
+  recordsPayment,
+  validatePayments,
+} from '../utils/invoiceMath';
+import { getCashLimit } from '../config/taxConfig';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -114,6 +121,21 @@ export interface InvoiceItem {
   unitPrice: number;
 }
 
+/**
+ * A single tendered payment of one method. Payment-recording documents (Receipt /
+ * TaxInvoiceReceipt) split their total across one or more of these so a large total
+ * can be settled with cash + non-cash while the cash portion stays under the Cash
+ * Law cap (see src/utils/invoiceMath.ts validatePayments and getCashLimit).
+ */
+export interface PaymentLine {
+  /** Stable id for React keys / row edits. */
+  id: string;
+  /** Method tendered for this line. */
+  method: PaymentMethod;
+  /** Gross ₪ tendered via this method; must be > 0. */
+  amount: number;
+}
+
 export interface Invoice {
   id: string;
   clientId: string;
@@ -130,8 +152,21 @@ export interface Invoice {
   total: number;
   status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Refunded' | 'Cancelled';
   documentType?: DocumentType;
-  /** How the customer paid. Optional for backward-compat with pre-field invoices. */
+  /**
+   * @deprecated by `paymentLines`. KEEP for back-compat: legacy single-method docs
+   * and non-payment documents (TaxInvoice / TransactionInvoice) may still set/read
+   * it. New payment-recording docs write `paymentLines` instead (and may mirror the
+   * first/only method here for older readers).
+   */
   paymentMethod?: PaymentMethod;
+  /**
+   * Actual receipt of payment, split by method. Present ONLY on documents that
+   * record payment: Receipt and TaxInvoiceReceipt. The sum of amounts must equal
+   * `total` (validated in invoiceMath.validatePayments). Absent on TaxInvoice /
+   * TransactionInvoice. Optional for back-compat — legacy invoices map lazily via
+   * invoiceMath.paymentLinesOf().
+   */
+  paymentLines?: PaymentLine[];
   pdfUrl?: string;
   sentAt?: string;
   /**
@@ -472,6 +507,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addInvoice = (invoice: Omit<Invoice, 'id' | 'total'>) => {
     const { total } = computeTotals(invoice.items, invoice.taxRate);
 
+    // Cash Law / multi-payment defense-in-depth: a payment-recording document
+    // (Receipt / TaxInvoiceReceipt) that is being ISSUED (non-Draft) must carry
+    // payment lines that sum to the total and keep cash under the dated cap. The
+    // form already gates this; refuse here so an invalid set can never be persisted
+    // even if the UI guard is bypassed. Drafts are not yet legal documents and may
+    // be saved partial/unbalanced.
+    if (recordsPayment(invoice.documentType) && invoice.status !== 'Draft') {
+      const lines = invoice.paymentLines ?? [];
+      if (!validatePayments(total, lines, getCashLimit(invoice.date)).ok) {
+        console.error('Refusing to add invoice: payment lines invalid (Cash Law / unbalanced).');
+        return;
+      }
+    }
+
     // 1a — allocate the next gapless number from the persisted per-type counter,
     // never from the invoices array. Seed the counter from existing documents on
     // first use (defensive; the Drive load path also seeds on migration). The
@@ -504,6 +553,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
+    // Cash Law / multi-payment defense-in-depth (mirror of addInvoice): if the edit
+    // results in an ISSUED (non-Draft) payment-recording document, its payment lines
+    // must sum to the (recomputed) total and keep cash under the dated cap. Refuse
+    // the edit otherwise so the form gating cannot be bypassed.
+    const target = invoices.find(inv => inv.id === id);
+    if (target) {
+      const candidate = { ...target, ...updates };
+      if (recordsPayment(candidate.documentType) && candidate.status !== 'Draft') {
+        const candidateTotal = computeTotals(candidate.items, candidate.taxRate).total;
+        const lines = candidate.paymentLines ?? [];
+        if (!validatePayments(candidateTotal, lines, getCashLimit(candidate.date)).ok) {
+          console.error('Refusing to update invoice: payment lines invalid (Cash Law / unbalanced).');
+          return;
+        }
+      }
+    }
+
     let billedAdjustment = 0;
     let clientId = '';
     

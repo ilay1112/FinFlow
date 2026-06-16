@@ -11,7 +11,7 @@ import {
   ChevronLeft,
   AlertTriangle,
 } from 'lucide-react';
-import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod, type VatTreatment } from '../context/FinanceContext';
+import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod, type PaymentLine, type VatTreatment } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useCurrencyFormatter } from '../utils/format';
@@ -21,13 +21,21 @@ import {
   DOCUMENT_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
+  recordsPayment,
+  validatePayments,
+  paymentLinesOf,
+  remainingToAllocate,
+  cashCapForTotal,
 } from '../utils/invoiceMath';
-import { getVatRate, getAllocationThreshold } from '../config/taxConfig';
+import { getVatRate, getAllocationThreshold, getCashLimit } from '../config/taxConfig';
+
+/** A payment line being edited in the form; amount may be blank while typing. */
+type PaymentLineDraft = { id: string; method: PaymentMethod; amount: number | '' };
 
 interface InvoiceFormData {
   clientId: string;
   documentType: DocumentType;
-  paymentMethod: PaymentMethod;
+  paymentLines: PaymentLineDraft[];
   bookingAgentId?: string;
   commissionAmount?: number;
   date: string;
@@ -37,6 +45,16 @@ interface InvoiceFormData {
   status: Invoice['status'];
   allocationNumber: string;
   vatTreatment: VatTreatment;
+}
+
+/** Maps an existing invoice's payment lines (or legacy method) into editable drafts. */
+function initialPaymentLines(invoice: Invoice | null): PaymentLineDraft[] {
+  if (!invoice) return [];
+  return paymentLinesOf(invoice).map(line => ({
+    id: line.id === 'legacy' ? Date.now().toString() : line.id,
+    method: line.method,
+    amount: line.amount,
+  }));
 }
 
 export default function InvoiceFormPage() {
@@ -74,7 +92,7 @@ export default function InvoiceFormPage() {
           editingInvoice.documentType && allowedDocumentTypes.includes(editingInvoice.documentType)
             ? editingInvoice.documentType
             : (isPatur ? 'Receipt' : 'TaxInvoice'),
-        paymentMethod: editingInvoice.paymentMethod ?? 'BankWire',
+        paymentLines: initialPaymentLines(editingInvoice),
         bookingAgentId: editingInvoice.bookingAgentId || '',
         commissionAmount: editingInvoice.commissionAmount || 0,
         date: editingInvoice.date,
@@ -89,7 +107,7 @@ export default function InvoiceFormPage() {
     return {
       clientId: '',
       documentType: isPatur ? 'Receipt' : 'TaxInvoice',
-      paymentMethod: 'BankWire',
+      paymentLines: [],
       bookingAgentId: '',
       commissionAmount: 0,
       date: today,
@@ -151,6 +169,52 @@ export default function InvoiceFormPage() {
 
   const formatCurrency = useCurrencyFormatter();
 
+  // --- Cash Law / multi-method payments (CASH_LAW_PAYMENTS_SPEC.md) ----------
+  // The Payments editor is shown ONLY for documents that record receipt of payment
+  // (Receipt / TaxInvoiceReceipt). The cap and balance are recomputed live.
+  const showsPayments = recordsPayment(formData.documentType);
+  const cashLimit = getCashLimit(formData.date);
+
+  // The displayed lines are DERIVED (no effects): a payment doc with 0 or 1 stored
+  // lines shows a single line whose amount is auto-synced to the live total (the
+  // convenience default + single-line sync from the spec). Once the user splits into
+  // 2+ lines, the stored split is shown verbatim and never auto-rewritten. A
+  // non-payment doc shows nothing. All row edits commit explicit multi-line state.
+  const displayLines: PaymentLineDraft[] = !showsPayments
+    ? []
+    : formData.paymentLines.length <= 1
+      ? [{ id: formData.paymentLines[0]?.id ?? 'seed', method: formData.paymentLines[0]?.method ?? 'BankWire', amount: total }]
+      : formData.paymentLines;
+
+  // Resolved numeric lines for validation — blank/zero rows dropped.
+  const resolvedPaymentLines: PaymentLine[] = displayLines
+    .map(line => ({ id: line.id, method: line.method, amount: Number(line.amount) || 0 }))
+    .filter(line => line.amount > 0);
+
+  const paymentValidation = validatePayments(total, resolvedPaymentLines, cashLimit);
+  const remaining = remainingToAllocate(total, resolvedPaymentLines);
+  const cashCap = cashCapForTotal(total, cashLimit);
+  const hasCashLine = displayLines.some(line => line.method === 'Cash');
+  // Save is blocked for an ISSUED (non-Draft) payment-recording document whose lines
+  // don't balance or whose cash breaches the cap. Drafts may be saved partial.
+  const paymentsBlockSave = showsPayments && formData.status !== 'Draft' && !paymentValidation.ok;
+
+  // Mutations operate against the DISPLAYED lines and commit the result, so the first
+  // edit materializes the derived seed line into real state.
+  const commitLines = (lines: PaymentLineDraft[]) => setFormData(prev => ({ ...prev, paymentLines: lines }));
+
+  const addPaymentLine = () => {
+    commitLines([...displayLines, { id: Date.now().toString(), method: 'Cash', amount: '' }]);
+  };
+
+  const removePaymentLine = (lineId: string) => {
+    commitLines(displayLines.filter(l => l.id !== lineId));
+  };
+
+  const updatePaymentLine = (lineId: string, updates: Partial<PaymentLineDraft>) => {
+    commitLines(displayLines.map(l => (l.id === lineId ? { ...l, ...updates } : l)));
+  };
+
   // A tax invoice issued by an Esek Morshe / Company whose pre-VAT subtotal reaches
   // the dated allocation threshold legally requires an ITA allocation number
   // (מספר הקצאה) printed on it, or the buyer cannot deduct input VAT. There is no
@@ -199,6 +263,13 @@ export default function InvoiceFormPage() {
       ? formData.documentType
       : allowedDocumentTypes[0];
 
+    // Cash Law gating (defense-in-depth behind the disabled button): block the save
+    // of an issued (non-Draft) payment-recording document whose lines don't balance
+    // or whose cash breaches the cap. FinanceContext re-validates as a final guard.
+    if (recordsPayment(documentType) && formData.status !== 'Draft' && !paymentValidation.ok) {
+      return;
+    }
+
     let currentAgentId = formData.bookingAgentId;
     let currentAgentName = '';
     let commission = 0;
@@ -227,7 +298,11 @@ export default function InvoiceFormPage() {
       // edits to the client record never mutate an already-issued legal document.
       clientIdNumber: currentClientIdNumber,
       documentType,
-      paymentMethod: formData.paymentMethod,
+      // Payment-recording docs persist the split lines and mirror the first method
+      // into the legacy `paymentMethod` for older readers / un-migrated PDF paths.
+      // Non-payment docs (TaxInvoice / TransactionInvoice) carry neither.
+      paymentLines: recordsPayment(documentType) ? resolvedPaymentLines : undefined,
+      paymentMethod: recordsPayment(documentType) ? resolvedPaymentLines[0]?.method : undefined,
       bookingAgentId: currentAgentId || undefined,
       bookingAgentName: currentAgentName || undefined,
       commissionAmount: commission || undefined,
@@ -366,19 +441,93 @@ export default function InvoiceFormPage() {
             </div>
           )}
 
-          {/* Payment Method */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.payment_method')}</label>
-            <select
-              className="flex h-12 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={formData.paymentMethod}
-              onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as PaymentMethod })}
-            >
-              {PAYMENT_METHODS.map(method => (
-                <option key={method} value={method}>{t(PAYMENT_METHOD_LABELS[method])}</option>
-              ))}
-            </select>
-          </div>
+          {/* Payments — only on documents that record receipt of payment (קבלה /
+              חשבונית מס-קבלה). Splits the total across methods so the cash portion
+              can stay under the Cash Law cap. */}
+          {showsPayments && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.payments')}</label>
+                {hasCashLine && (
+                  <span className={`text-[11px] font-bold ${paymentValidation.cashOverCap ? 'text-red-600' : 'text-slate-500'}`}>
+                    {t('invoices.max_cash', { cap: formatCurrency(cashCap) })}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {displayLines.map((line) => {
+                  const isOverCapCash = line.method === 'Cash' && paymentValidation.cashOverCap;
+                  return (
+                    <div
+                      key={line.id}
+                      className={`flex items-center gap-2 rounded-xl border p-2 bg-white ${isOverCapCash ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                    >
+                      <select
+                        className="flex h-11 flex-1 rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        value={line.method}
+                        onChange={(e) => updatePaymentLine(line.id, { method: e.target.value as PaymentMethod })}
+                      >
+                        {PAYMENT_METHODS.map(method => (
+                          <option key={method} value={method}>{t(PAYMENT_METHOD_LABELS[method])}</option>
+                        ))}
+                      </select>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        className="h-11 w-28"
+                        value={line.amount}
+                        onChange={(e) => updatePaymentLine(line.id, { amount: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })}
+                      />
+                      <button
+                        type="button"
+                        className="p-2 text-slate-400 hover:text-red-500 transition-colors shrink-0"
+                        onClick={() => removePaymentLine(line.id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <Button type="button" variant="outline" size="sm" onClick={addPaymentLine} className="h-10 border-dashed w-full">
+                <Plus className="h-4 w-4 me-1" /> {t('invoices.add_payment')}
+              </Button>
+
+              {/* Live remaining-balance indicator */}
+              {Math.abs(remaining) > 0.01 && (
+                <p className={`text-xs font-bold ${remaining < 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                  {remaining < 0
+                    ? t('invoices.payment_over_by', { amount: formatCurrency(-remaining) })
+                    : t('invoices.payment_remaining', { amount: formatCurrency(remaining) })}
+                </p>
+              )}
+
+              {/* Cash-over-cap warning — block (reuses the allocation-warning styling) */}
+              {paymentValidation.cashOverCap && (
+                <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-4">
+                  <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-800 leading-relaxed">
+                    {t('invoices.cash_over_limit', {
+                      cap: formatCurrency(cashCap),
+                      excess: formatCurrency(paymentValidation.cashTotal - cashCap),
+                    })}
+                  </p>
+                </div>
+              )}
+
+              {/* Unbalanced block — only enforced (shown as a hard block) on non-Draft */}
+              {formData.status !== 'Draft' && !paymentValidation.balanced && resolvedPaymentLines.length > 0 && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    {t('invoices.payment_unbalanced', { remaining: formatCurrency(Math.abs(remaining)) })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Allocation number (מספר הקצאה) — interim manual flow */}
           {allocationRequired && (
@@ -594,6 +743,7 @@ export default function InvoiceFormPage() {
           type="submit"
           className="flex-1 h-12 font-bold"
           onClick={handleSubmit}
+          disabled={paymentsBlockSave}
         >
           {isEditing ? t('common.save') : t('invoices.create_invoice')}
         </Button>
