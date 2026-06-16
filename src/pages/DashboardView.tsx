@@ -46,7 +46,8 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { cn } from '../utils/utils';
 
-import { calculateProgressiveTax } from '../utils/utils';
+import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
+import { useCurrencyFormatter } from '../utils/format';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'];
 
@@ -136,7 +137,7 @@ export default function DashboardView() {
   const prevNetProfit = prevRevenue - prevTotalExpenses - prevTotalAgentCommissions;
 
   // Esek Zair Normative Deduction (30% of revenue)
-  const taxableIncome = currentRevenue - (currentRevenue * 0.30);
+  const taxableIncome = currentRevenue - (currentRevenue * NORMATIVE_DEDUCTION_RATE);
   const estimatedTax = calculateProgressiveTax(taxableIncome);
 
   const calculateChange = (current: number, previous: number) => {
@@ -181,11 +182,7 @@ export default function DashboardView() {
     return acc;
   }, []);
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   const toggleRange = () => {
     setTimeRange(prev => prev === 'CurrentYear' ? 'CurrentMonth' : 'CurrentYear');

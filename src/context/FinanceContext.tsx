@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
 import * as googleDrive from '../services/googleDrive';
+import { computeTotals, nextInvoiceId } from '../utils/invoiceMath';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -78,7 +79,6 @@ interface FinanceContextType {
   invoices: Invoice[];
   categories: string[];
   bookingAgents: BookingAgent[];
-  taxRate: number;
   businessSettings: BusinessSettings;
   businesses: googleDrive.BusinessFolder[];
   activeBusiness: googleDrive.BusinessFolder | null;
@@ -100,7 +100,6 @@ interface FinanceContextType {
   deleteInvoice: (id: string) => void;
   addCategory: (category: string) => void;
   deleteCategory: (category: string) => void;
-  setTaxRate: (rate: number) => void;
   updateBusinessSettings: (settings: BusinessSettings) => void;
   uploadReceipt: (file: File, expenseId: string, metadata?: { vendor: string; date: string }) => Promise<void>;
   switchBusiness: (businessId: string) => void;
@@ -128,7 +127,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [clients, setClients] = useState<Client[]>([]);
   const [bookingAgents, setBookingAgents] = useState<BookingAgent[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [taxRate, setTaxRate] = useState<number>(20);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(DEFAULT_BUSINESS_SETTINGS);
   
   const [businesses, setBusinesses] = useState<googleDrive.BusinessFolder[]>([]);
@@ -152,7 +150,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const savedClients = localStorage.getItem('finance_clients');
         const savedBookingAgents = localStorage.getItem('finance_booking_agents');
         const savedInvoices = localStorage.getItem('finance_invoices');
-        const savedTaxRate = localStorage.getItem('finance_tax_rate');
         const savedSettings = localStorage.getItem('finance_business_settings');
         const savedActiveBusiness = localStorage.getItem('finance_active_business');
 
@@ -161,7 +158,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (savedClients) setClients(JSON.parse(savedClients));
         if (savedBookingAgents) setBookingAgents(JSON.parse(savedBookingAgents));
         if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-        if (savedTaxRate) setTaxRate(Number(savedTaxRate));
         if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
         if (savedActiveBusiness) setActiveBusiness(JSON.parse(savedActiveBusiness));
       } catch (error) {
@@ -222,7 +218,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setClients((driveData.clients || []) as unknown as Client[]);
           setBookingAgents((driveData.bookingAgents || []) as unknown as BookingAgent[]);
           setInvoices((driveData.invoices || []) as unknown as Invoice[]);
-          setTaxRate(driveData.taxRate ?? 20);
           setBusinessSettings({
             ...DEFAULT_BUSINESS_SETTINGS,
             ...(driveData.businessSettings || {})
@@ -254,7 +249,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem('finance_clients', JSON.stringify(clients));
       localStorage.setItem('finance_booking_agents', JSON.stringify(bookingAgents));
       localStorage.setItem('finance_invoices', JSON.stringify(invoices));
-      localStorage.setItem('finance_tax_rate', taxRate.toString());
       localStorage.setItem('finance_business_settings', JSON.stringify(businessSettings));
     } catch (storageError) {
       console.warn('Could not save finance data to localStorage', storageError);
@@ -265,7 +259,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const timer = setTimeout(async () => {
         setIsSyncing(true);
         try {
-          const localState = { expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings };
+          const localState = { expenses, categories, clients, invoices, bookingAgents, businessSettings };
           const { version, merged } = await googleDrive.saveAppStateGuarded(
             accessToken,
             driveFileId.current!,
@@ -293,7 +287,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }, 1000); // Debounce saves
       return () => clearTimeout(timer);
     }
-  }, [expenses, categories, clients, invoices, bookingAgents, taxRate, businessSettings, isAuthenticated, accessToken, activeBusiness]);
+  }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, isAuthenticated, accessToken, activeBusiness]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
     const newExpense = { ...expense, id: expense.id || uuidv4() };
@@ -367,24 +361,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addInvoice = (invoice: Omit<Invoice, 'id' | 'total'>) => {
-    const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    const taxAmount = subtotal * (invoice.taxRate / 100);
-    const total = subtotal + taxAmount;
-    
-    // Receipts get their own RCPT-XXXX sequence; everything else uses INV-XXXX
-    const isReceipt = invoice.documentType === 'Receipt';
-    const prefix = isReceipt ? 'RCPT' : 'INV';
-    const prefixRe = isReceipt ? /^RCPT-(\d+)$/ : /^INV-(\d+)$/;
-    const seed = isReceipt ? 0 : 3999;
+    const { total } = computeTotals(invoice.items, invoice.taxRate);
+    const newInvoice = { ...invoice, id: nextInvoiceId(invoices, invoice.documentType), total };
 
-    const nextNumber = invoices.reduce((max, inv) => {
-      const match = inv.id.match(prefixRe);
-      const num = match ? parseInt(match[1], 10) : 0;
-      return num > max ? num : max;
-    }, seed) + 1;
-
-    const newInvoice = { ...invoice, id: `${prefix}-${String(nextNumber).padStart(4, '0')}`, total };
-    
     setInvoices(prev => [newInvoice, ...prev]);
     setClients(prev => prev.map(c => 
       c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
@@ -425,9 +404,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         // Recalculate total if items or taxRate changed
-        const subtotal = updated.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-        const taxAmount = subtotal * (updated.taxRate / 100);
-        updated.total = subtotal + taxAmount;
+        updated.total = computeTotals(updated.items, updated.taxRate).total;
 
         // Handle totalBilled adjustment for clients
         if (inv.status !== 'Refunded' && updated.status === 'Refunded') {
@@ -491,8 +468,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const deleteCategory = (category: string) => {
     setCategories(prev => prev.filter(c => c !== category));
   };
-
-  const setTaxRateHandler = (rate: number) => setTaxRate(rate);
 
   const updateBusinessSettings = (settings: BusinessSettings) => setBusinessSettings(settings);
 
@@ -587,13 +562,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <FinanceContext.Provider value={{ 
-      expenses, clients, invoices, categories, bookingAgents, taxRate, businessSettings,
+      expenses, clients, invoices, categories, bookingAgents, businessSettings,
       businesses, activeBusiness,
       isLoading, isSyncing, isInitialized, syncError,
       addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient, 
       addBookingAgent, updateBookingAgent, deleteBookingAgent,
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
-      setTaxRate: setTaxRateHandler, updateBusinessSettings, uploadReceipt,
+      updateBusinessSettings, uploadReceipt,
       switchBusiness, createBusiness, deleteBusiness
     }}>
       {children}

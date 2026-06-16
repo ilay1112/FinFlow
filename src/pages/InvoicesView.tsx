@@ -17,7 +17,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
-import { generateInvoicePDF } from '../services/pdf/invoice-service';
+import { generateInvoicePDF, waitForTemplateReady } from '../services/pdf/invoice-service';
 import { InvoiceTemplate } from '../services/pdf/InvoiceTemplate';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -26,9 +26,10 @@ import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
+import { useCurrencyFormatter } from '../utils/format';
 
 export default function InvoicesView() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { invoices, updateInvoice, deleteInvoice, businessSettings } = useFinance();
   const location = useLocation();
   const navigate = useNavigate();
@@ -96,23 +97,29 @@ export default function InvoicesView() {
     }
   };
 
-  const handleDownloadPDF = async (invoice: Invoice) => {
+  const handleDownloadPDF = (invoice: Invoice) => {
     setIsGeneratingPDF(true);
     setPdfInvoice(invoice);
-    
-    // Give React a tick to render the template into the portal
-    setTimeout(async () => {
-      await generateInvoicePDF(invoice, businessSettings, 'invoice-template-portal');
-      setIsGeneratingPDF(false);
-      setPdfInvoice(null);
-    }, 100);
   };
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  // Capture the PDF only once the template has actually rendered into the portal —
+  // deterministic, replacing the old fixed setTimeout race against React's commit.
+  useEffect(() => {
+    if (!pdfInvoice) return;
+    let cancelled = false;
+    (async () => {
+      await waitForTemplateReady();
+      if (cancelled) return;
+      await generateInvoicePDF(pdfInvoice, businessSettings, 'invoice-template-portal');
+      if (!cancelled) {
+        setIsGeneratingPDF(false);
+        setPdfInvoice(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfInvoice, businessSettings]);
+
+  const formatCurrency = useCurrencyFormatter();
 
   const getStatusBadge = (status: Invoice['status']) => {
     switch (status) {

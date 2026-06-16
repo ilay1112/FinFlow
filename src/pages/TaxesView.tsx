@@ -3,10 +3,11 @@ import { Calculator, Info, CheckCircle, AlertCircle } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { calculateProgressiveTax } from '../utils/utils';
+import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
+import { useCurrencyFormatter } from '../utils/format';
 
 export default function TaxesView() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { expenses, invoices } = useFinance();
 
   const totalRevenue = invoices
@@ -16,17 +17,13 @@ export default function TaxesView() {
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   
   // Israeli Esek Zair Normative Deduction (30% of revenue)
-  const deductibleExpenses = totalRevenue * 0.30;
+  const deductibleExpenses = totalRevenue * NORMATIVE_DEDUCTION_RATE;
   
   const netProfit = totalRevenue - totalExpenses;
   const taxableIncome = totalRevenue - deductibleExpenses;
   const estimatedTax = calculateProgressiveTax(taxableIncome);
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   return (
     <div className="space-y-8">

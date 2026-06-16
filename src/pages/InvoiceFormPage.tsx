@@ -13,6 +13,8 @@ import {
 import { useFinance, type Invoice, type InvoiceItem, type DocumentType } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { useCurrencyFormatter } from '../utils/format';
+import { computeTotals, computeCommission } from '../utils/invoiceMath';
 
 interface InvoiceFormData {
   clientId: string;
@@ -27,7 +29,7 @@ interface InvoiceFormData {
 }
 
 export default function InvoiceFormPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const { invoices, clients, bookingAgents, addInvoice, updateInvoice, businessSettings } = useFinance();
@@ -110,16 +112,13 @@ export default function InvoiceFormPage() {
     ).slice(0, 5);
   }, [bookingAgents, agentSearchTerm]);
 
-  const subtotal = formData.items.reduce((sum, item) => sum + (item.quantity * (Number(item.unitPrice) || 0)), 0);
   const activeTaxRate = isPatur ? 0 : 18;
-  const taxAmount = subtotal * (activeTaxRate / 100);
-  const total = subtotal + taxAmount;
+  const { subtotal, taxAmount, total } = computeTotals(
+    formData.items.map(item => ({ quantity: item.quantity, unitPrice: Number(item.unitPrice) || 0 })),
+    activeTaxRate
+  );
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', {
-      style: 'currency',
-      currency: 'ILS',
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   const addItem = () => {
     setFormData({
@@ -164,9 +163,7 @@ export default function InvoiceFormPage() {
       currentAgentId = existingAgent.id;
       currentAgentName = existingAgent.name;
       const sub = processedItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-      let calc = sub * (existingAgent.commissionRate / 100);
-      if (existingAgent.minCommission && calc < existingAgent.minCommission) calc = existingAgent.minCommission;
-      commission = calc;
+      commission = computeCommission(sub, existingAgent);
     } else if (agentSearchTerm.trim()) {
       currentAgentId = 'custom';
       currentAgentName = agentSearchTerm.trim();

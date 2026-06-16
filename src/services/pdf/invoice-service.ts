@@ -3,6 +3,24 @@ import html2canvas from 'html2canvas';
 import { type Invoice, type BusinessSettings } from '../../context/FinanceContext';
 
 /**
+ * Resolves once the off-screen invoice template is actually ready to be captured:
+ * after web fonts (Heebo) have loaded and the browser has painted at least one frame.
+ * Deterministic replacement for the old arbitrary `setTimeout` delays before capture.
+ */
+export const waitForTemplateReady = async (): Promise<void> => {
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      /* fonts.ready unsupported — fall through to the rAF wait */
+    }
+  }
+  await new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  );
+};
+
+/**
  * Returns a Blob of the rendered invoice PDF without triggering a download.
  * Used for Drive upload and email attachment.
  */

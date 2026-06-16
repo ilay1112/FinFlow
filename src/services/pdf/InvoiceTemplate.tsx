@@ -1,6 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Invoice, type BusinessSettings } from '../../context/FinanceContext';
+import { computeTotals } from '../../utils/invoiceMath';
+import { useCurrencyFormatter } from '../../utils/format';
 
 interface InvoiceTemplateProps {
   invoice: Invoice;
@@ -21,14 +23,9 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'he';
 
-  const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-  const taxAmount = subtotal * (invoice.taxRate / 100);
+  const { subtotal, taxAmount } = computeTotals(invoice.items, invoice.taxRate);
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   return (
     <div 

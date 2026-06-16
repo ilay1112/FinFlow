@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useCurrencyFormatter } from '../utils/format';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
@@ -23,7 +24,7 @@ import { AlertDialog } from '../components/ui/AlertDialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 
 export default function BookingAgentsView() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { 
     bookingAgents, 
     invoices, 
@@ -147,11 +148,7 @@ export default function BookingAgentsView() {
     setIsModalOpen(false);
   };
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   const bookingAgentInvoices = selectedBookingAgentForHistory 
     ? invoices.filter(inv => inv.bookingAgentId === selectedBookingAgentForHistory.id)

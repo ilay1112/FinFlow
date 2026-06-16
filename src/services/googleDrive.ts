@@ -11,7 +11,6 @@ export interface AppState {
   invoices: Invoice[];
   categories: string[];
   bookingAgents?: BookingAgent[];
-  taxRate: number;
   businessSettings: BusinessSettings;
 }
 
@@ -37,7 +36,6 @@ const DEFAULT_STATE: AppState = {
   invoices: [],
   categories: ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'],
   bookingAgents: [],
-  taxRate: 20,
   businessSettings: {
     name: '',
     idNumber: '',
@@ -219,7 +217,7 @@ function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
  * Merges a remote AppState into the local one (Step 1 strategy):
  * collections are unioned by id with local winning on overlap, so records added
  * on another device are preserved instead of being clobbered. Singletons
- * (taxRate, businessSettings) are local-wins; categories are unioned.
+ * businessSettings is local-wins; categories are unioned.
  *
  * Known limitation: without per-record timestamps/tombstones this cannot resolve
  * the same record edited on two devices (local wins) and a record deleted locally
@@ -232,7 +230,6 @@ export function mergeAppState(local: AppState, remote: AppState): AppState {
     invoices: mergeById(local.invoices || [], remote.invoices || []),
     bookingAgents: mergeById(local.bookingAgents || [], remote.bookingAgents || []),
     categories: Array.from(new Set([...(remote.categories || []), ...(local.categories || [])])),
-    taxRate: local.taxRate,
     businessSettings: local.businessSettings,
   };
 }

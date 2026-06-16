@@ -6,6 +6,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Israeli Esek Zair normative deduction: 30% of revenue is treated as deductible
+ * without receipts (2024–2026 reform). Single source of truth for this rate.
+ */
+export const NORMATIVE_DEDUCTION_RATE = 0.30;
+
+/**
  * Calculates progressive income tax based on Israeli tax brackets (2026).
  * https://www.kolzchut.org.il/he/מדרגות_מס_הכנסה
  */

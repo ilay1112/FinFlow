@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useCurrencyFormatter } from '../utils/format';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
@@ -273,11 +274,7 @@ export default function ExpensesView() {
     }
   };
 
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', { 
-      style: 'currency', 
-      currency: 'ILS' 
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   return (
     <div className="space-y-6 px-1 md:px-0">

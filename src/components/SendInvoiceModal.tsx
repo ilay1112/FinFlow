@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Mail, MessageCircle, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
 import { authService } from '../services/auth';
-import { generateInvoicePDFBlob } from '../services/pdf/invoice-service';
+import { generateInvoicePDFBlob, waitForTemplateReady } from '../services/pdf/invoice-service';
 import { uploadInvoicePDF } from '../services/googleDrive';
 import { sendInvoiceEmail } from '../services/gmail';
 import { shareInvoice } from '../services/share';
@@ -11,6 +11,7 @@ import { InvoiceTemplate } from '../services/pdf/InvoiceTemplate';
 import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
+import { useCurrencyFormatter } from '../utils/format';
 
 interface Props {
   invoice: Invoice;
@@ -20,10 +21,9 @@ interface Props {
 type Step = 'idle' | 'generating' | 'uploading' | 'sending' | 'done' | 'error';
 
 const TEMPLATE_ID = 'send-invoice-template-portal';
-const TEMPLATE_RENDER_DELAY = 200;
 
 export function SendInvoiceModal({ invoice, onClose }: Props) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { clients, businessSettings, activeBusiness, updateInvoice } = useFinance();
 
   const client = clients.find(c => c.id === invoice.clientId);
@@ -32,11 +32,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
   const [step, setStep] = useState<Step>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat(i18n.language === 'he' ? 'he-IL' : 'en-US', {
-      style: 'currency',
-      currency: 'ILS',
-    }).format(value);
+  const formatCurrency = useCurrencyFormatter();
 
   useEffect(() => {
     if (client) {
@@ -54,7 +50,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
 
   async function getPDFAndDriveUrl(): Promise<{ pdfBlob: Blob; driveUrl: string }> {
     setStep('generating');
-    await new Promise(r => setTimeout(r, TEMPLATE_RENDER_DELAY));
+    await waitForTemplateReady();
 
     const pdfBlob = await generateInvoicePDFBlob(TEMPLATE_ID);
     if (!pdfBlob) throw new Error('PDF generation failed');

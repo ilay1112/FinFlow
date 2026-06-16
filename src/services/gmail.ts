@@ -1,4 +1,5 @@
 import type { InvoiceItem } from '../context/FinanceContext';
+import { computeTotals } from '../utils/invoiceMath';
 
 export interface SendInvoiceEmailParams {
   to: string;
@@ -77,8 +78,7 @@ async function buildMimeMessage(params: {
 }
 
 function buildHtmlBody(params: SendInvoiceEmailParams): string {
-  const subtotal = params.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-  const taxAmount = subtotal * (params.taxRate / 100);
+  const { subtotal, taxAmount } = computeTotals(params.items, params.taxRate);
 
   const itemRows = params.items.map(item => {
     const lineTotal = item.quantity * item.unitPrice;
