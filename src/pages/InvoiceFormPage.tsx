@@ -175,15 +175,17 @@ export default function InvoiceFormPage() {
   const showsPayments = recordsPayment(formData.documentType);
   const cashLimit = getCashLimit(formData.date);
 
-  // The displayed lines are DERIVED (no effects): a payment doc with 0 or 1 stored
-  // lines shows a single line whose amount is auto-synced to the live total (the
-  // convenience default + single-line sync from the spec). Once the user splits into
-  // 2+ lines, the stored split is shown verbatim and never auto-rewritten. A
-  // non-payment doc shows nothing. All row edits commit explicit multi-line state.
+  // The displayed lines are DERIVED (no effects). A payment doc with NO stored lines
+  // shows a single convenience line auto-synced to the live total, so the common
+  // "paid in full by one method" case needs no typing. As soon as the user touches it
+  // (picks a method or edits the amount) the line is materialized into state and shown
+  // verbatim — including a lone line — so its amount stays fully editable (e.g. a
+  // single cash line can be lowered below the total to then add another method).
+  // A non-payment doc shows nothing.
   const displayLines: PaymentLineDraft[] = !showsPayments
     ? []
-    : formData.paymentLines.length <= 1
-      ? [{ id: formData.paymentLines[0]?.id ?? 'seed', method: formData.paymentLines[0]?.method ?? 'BankWire', amount: total }]
+    : formData.paymentLines.length === 0
+      ? [{ id: 'seed', method: 'BankWire', amount: total }]
       : formData.paymentLines;
 
   // Resolved numeric lines for validation — blank/zero rows dropped.
