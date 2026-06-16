@@ -6,7 +6,8 @@ import {
   Receipt, 
   FileText, 
   Users, 
-  Calculator, 
+  Calculator,
+  Percent,
   Menu,
   CreditCard,
   LogOut,
@@ -30,7 +31,7 @@ import { FloatingActionButton } from '../components/FloatingActionButton';
 export function AppLayout() {
   const { t, i18n } = useTranslation();
   const { user, logout, isAuthenticated } = useAuth();
-  const { isLoading, isSyncing, syncError, businesses, activeBusiness, switchBusiness, createBusiness } = useFinance();
+  const { isLoading, isSyncing, syncError, businesses, activeBusiness, switchBusiness, createBusiness, businessSettings } = useFinance();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBusinessDropdownOpen, setIsBusinessDropdownOpen] = useState(false);
@@ -84,6 +85,11 @@ export function AppLayout() {
     { name: t('common.clients'), href: '/clients', icon: Users },
     { name: t('common.booking_agents') || 'Booking Agents', href: '/booking-agents', icon: Briefcase },
     { name: t('common.taxes'), href: '/taxes', icon: Calculator },
+    // VAT reporting only applies to a VAT-registered business; an Osek Patur files
+    // no Doch Maam, so the nav item is hidden for them.
+    ...(businessSettings.type !== 'EsekPatur'
+      ? [{ name: t('common.vat'), href: '/vat', icon: Percent }]
+      : []),
   ];
 
   return (

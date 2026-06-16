@@ -11,7 +11,7 @@ import {
   ChevronLeft,
   AlertTriangle,
 } from 'lucide-react';
-import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod } from '../context/FinanceContext';
+import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod, type VatTreatment } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useCurrencyFormatter } from '../utils/format';
@@ -36,6 +36,7 @@ interface InvoiceFormData {
   taxRate: number;
   status: Invoice['status'];
   allocationNumber: string;
+  vatTreatment: VatTreatment;
 }
 
 export default function InvoiceFormPage() {
@@ -82,6 +83,7 @@ export default function InvoiceFormPage() {
         taxRate: isPatur ? 0 : editingInvoice.taxRate,
         status: editingInvoice.status,
         allocationNumber: editingInvoice.allocationNumber ?? '',
+        vatTreatment: editingInvoice.vatTreatment ?? 'standard',
       };
     }
     return {
@@ -96,6 +98,7 @@ export default function InvoiceFormPage() {
       taxRate: isPatur ? 0 : getVatRate(today),
       status: 'Paid',
       allocationNumber: '',
+      vatTreatment: 'standard',
     };
   });
 
@@ -136,8 +139,11 @@ export default function InvoiceFormPage() {
   }, [bookingAgents, agentSearchTerm]);
 
   // VAT is resolved from the dated config by the invoice's own issue date, so an
-  // invoice always uses the rate that legally applied when it was issued.
-  const activeTaxRate = isPatur ? 0 : getVatRate(formData.date);
+  // invoice always uses the rate that legally applied when it was issued. Zero-rated
+  // (export/Eilat) and exempt sales carry 0% VAT regardless of the standard rate.
+  const isZeroVatTreatment =
+    formData.vatTreatment === 'zero_rated' || formData.vatTreatment === 'exempt';
+  const activeTaxRate = isPatur || isZeroVatTreatment ? 0 : getVatRate(formData.date);
   const { subtotal, taxAmount, total } = computeTotals(
     formData.items.map(item => ({ quantity: item.quantity, unitPrice: Number(item.unitPrice) || 0 })),
     activeTaxRate
@@ -233,6 +239,10 @@ export default function InvoiceFormPage() {
       // Only persist an allocation number for document types that can legally carry
       // one; a trimmed empty string is stored as undefined.
       allocationNumber: isTaxInvoiceType ? (formData.allocationNumber.trim() || undefined) : undefined,
+      // VAT treatment drives Doch Maam bucketing. Patur invoices are always standard
+      // (0% by exemption, not by zero-rating), so only persist a non-standard
+      // treatment for a VAT-registered business.
+      vatTreatment: isPatur ? 'standard' : formData.vatTreatment,
     };
 
     if (isEditing && editingInvoice) {
@@ -336,6 +346,25 @@ export default function InvoiceFormPage() {
               ))}
             </select>
           </div>
+
+          {/* VAT Treatment — only for a VAT-registered business (Morshe / Company) */}
+          {!isPatur && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.vat_treatment')}</label>
+              <select
+                className="flex h-12 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={formData.vatTreatment}
+                onChange={(e) => setFormData({ ...formData, vatTreatment: e.target.value as VatTreatment })}
+              >
+                <option value="standard">{t('invoices.vat_treatment_standard')}</option>
+                <option value="zero_rated">{t('invoices.vat_treatment_zero_rated')}</option>
+                <option value="exempt">{t('invoices.vat_treatment_exempt')}</option>
+              </select>
+              {formData.vatTreatment === 'exempt' && (
+                <p className="text-[11px] text-amber-600 leading-relaxed">{t('invoices.vat_treatment_exempt_note')}</p>
+              )}
+            </div>
+          )}
 
           {/* Payment Method */}
           <div className="space-y-1.5">

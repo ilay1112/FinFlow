@@ -10,6 +10,22 @@ export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'Tra
 /** How the customer paid for the document. */
 export type PaymentMethod = 'Cash' | 'Digital' | 'Card' | 'BankWire';
 
+/**
+ * How much of an expense's input VAT may be reclaimed:
+ * - `full` → 100% (standard business purchase backed by a tax invoice)
+ * - `two_thirds` → 2/3 (vehicles; 1/3 treated as private)
+ * - `none` → 0 (entertainment/כיבוד, private, or non-tax-invoice purchases)
+ */
+export type VatDeductibility = 'full' | 'two_thirds' | 'none';
+
+/**
+ * VAT treatment of an issued document for VAT reporting:
+ * - `standard` → standard-rated sale (taxRate usually 18; lands in Doch Maam Field 1/4)
+ * - `zero_rated` → export / Eilat-zone sale (taxRate 0; Field 2; input VAT still recoverable)
+ * - `exempt` → exempt sale (Field 3; does not support input-VAT recovery)
+ */
+export type VatTreatment = 'standard' | 'zero_rated' | 'exempt';
+
 export interface BusinessSettings {
   name: string;
   idNumber: string;
@@ -25,6 +41,23 @@ export interface BusinessSettings {
    * optimistic-concurrency save guard as every other state change).
    */
   docCounters?: Partial<Record<DocumentType, number>>;
+  /**
+   * VAT filing cadence. Default 'bimonthly'. Auto-suggested as 'monthly' when
+   * annual turnover crosses the monthly-filing threshold or PCN874 applies.
+   */
+  vatReportingPeriod?: 'monthly' | 'bimonthly';
+  /**
+   * Whether the business is on cash basis for VAT (advisor-set). Default false =
+   * accrual. Controls the output-VAT recognition date (§4, §9 Q2 — advisor-confirm).
+   */
+  vatCashBasis?: boolean;
+  /**
+   * Whether the business files a detailed VAT return (PCN874 / דיווח מפורט). Default
+   * false. Detailed filers get an extra payment deadline (the 23rd); inferring this
+   * purely from a monthly cadence is wrong, so it is an explicit advisor-set flag. A
+   * suggestion to enable it is shown once annual turnover crosses the relevant ceiling.
+   */
+  isDetailedFiler?: boolean;
 }
 
 export interface Expense {
@@ -32,11 +65,24 @@ export interface Expense {
   date: string;
   vendor: string;
   category: string;
+  /** KEEP: gross (VAT-inclusive) total actually paid. Unchanged meaning. */
   amount: number;
   receiptStatus: 'Uploaded' | 'Missing';
   receiptName?: string;
   receiptUrl?: string;
   bookingAgentId?: string;
+  /** Net (pre-VAT) base of the expense. Optional; if absent, derived from amount + vatRate at read time (see vatReport.ts). */
+  netAmount?: number;
+  /** VAT rate applied to this expense, %, by the expense date (usually 18; 0 for zero-rated/exempt purchases). */
+  vatRate?: number;
+  /** VAT portion in ₪ as it appears on the supplier invoice. Optional; derivable. */
+  vatAmount?: number;
+  /** How much of vatAmount is reclaimable as input VAT. Legacy rows default to 'none' (see migration §8). */
+  vatDeductibility?: VatDeductibility;
+  /** True only when backed by a valid tax invoice (חשבונית מס) with the supplier's TIN — a precondition for any input-VAT claim. */
+  hasValidTaxInvoice?: boolean;
+  /** Supplier's allocation number (מספר הקצאה), when the supplier was required to issue one (purchase >= dated threshold, pre-VAT). Missing it blocks the deduction above the threshold. */
+  supplierAllocationNumber?: string;
 }
 
 export interface Client {
@@ -103,6 +149,12 @@ export interface Invoice {
    * future server-side integration can populate it automatically at issue time.
    */
   allocationNumber?: string;
+  /**
+   * VAT treatment for reporting. Defaults to 'standard' for legacy invoices (see
+   * migration §8). 'zero_rated' = export/Eilat (taxRate 0, Doch Maam Field 2);
+   * 'exempt' = Field 3. Only meaningful for an Osek Morshe / Company.
+   */
+  vatTreatment?: VatTreatment;
 }
 
 interface FinanceContextType {
@@ -149,7 +201,10 @@ const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   address: '',
   phone: '',
   email: '',
-  type: 'EsekPatur'
+  type: 'EsekPatur',
+  vatReportingPeriod: 'bimonthly',
+  vatCashBasis: false,
+  isDetailedFiler: false
 };
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

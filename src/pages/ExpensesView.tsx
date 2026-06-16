@@ -18,7 +18,8 @@ import {
   Settings2,
   Filter
 } from 'lucide-react';
-import { useFinance, type Expense } from '../context/FinanceContext';
+import { useFinance, type Expense, type VatDeductibility } from '../context/FinanceContext';
+import { getVatRate } from '../config/taxConfig';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -33,6 +34,27 @@ import { v4 as uuidv4 } from 'uuid';
 type SortKey = 'date' | 'vendor' | 'category' | 'amount';
 type SortDirection = 'asc' | 'desc';
 
+/**
+ * Suggest an input-VAT deductibility class from the expense category (§6, §7).
+ * Vehicles/travel → two_thirds (1/3 private); entertainment/hospitality → none.
+ * Always user-overridable — this is only the default the form pre-selects.
+ */
+const suggestDeductibility = (category: string): VatDeductibility => {
+  const c = category.toLowerCase();
+  if (c.includes('vehicle') || c.includes('travel') || c.includes('רכב') || c.includes('נסיע')) {
+    return 'two_thirds';
+  }
+  if (
+    c.includes('entertainment') ||
+    c.includes('hospitality') ||
+    c.includes('כיבוד') ||
+    c.includes('אירוח')
+  ) {
+    return 'none';
+  }
+  return 'full';
+};
+
 const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: { key: SortKey; direction: SortDirection } }) => {
   if (sortConfig.key !== column) return <ArrowUpDown className="ms-2 h-4 w-4" />;
   return sortConfig.direction === 'asc' ? <ArrowUp className="ms-2 h-4 w-4" /> : <ArrowDown className="ms-2 h-4 w-4" />;
@@ -40,7 +62,10 @@ const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: { key: 
 
 export default function ExpensesView() {
   const { t, i18n } = useTranslation();
-  const { expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, deleteCategory, uploadReceipt } = useFinance();
+  const { expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, deleteCategory, uploadReceipt, businessSettings } = useFinance();
+  // Input-VAT capture only matters for a VAT-registered business; an Osek Patur
+  // pays no VAT and never reclaims input VAT, so the fields are hidden for them.
+  const showVatFields = businessSettings.type !== 'EsekPatur';
   const location = useLocation();
   const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -89,11 +114,16 @@ export default function ExpensesView() {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     vendor: '',
-    category: '', 
+    category: '',
     amount: '',
     receiptStatus: 'Missing' as 'Uploaded' | 'Missing',
     receiptName: '',
-    receiptUrl: ''
+    receiptUrl: '',
+    // Input-VAT fields (Osek Murshe). `amount` stays gross; these capture the split
+    // and deductibility so the VAT report can claim input VAT (§3.1).
+    hasValidTaxInvoice: false,
+    vatDeductibility: 'full' as VatDeductibility,
+    supplierAllocationNumber: ''
   });
 
   const handleSort = (key: SortKey) => {
@@ -134,7 +164,11 @@ export default function ExpensesView() {
         amount: expense.amount.toString(),
         receiptStatus: expense.receiptStatus,
         receiptName: expense.receiptName || '',
-        receiptUrl: expense.receiptUrl || ''
+        receiptUrl: expense.receiptUrl || '',
+        // §8 read-time defaults: legacy rows default to non-claimable until confirmed.
+        hasValidTaxInvoice: expense.hasValidTaxInvoice ?? false,
+        vatDeductibility: expense.vatDeductibility ?? 'none',
+        supplierAllocationNumber: expense.supplierAllocationNumber || ''
       });
     } else {
       setEditingExpense(null);
@@ -150,7 +184,10 @@ export default function ExpensesView() {
         amount: '',
         receiptStatus: 'Missing',
         receiptName: '',
-        receiptUrl: ''
+        receiptUrl: '',
+        hasValidTaxInvoice: false,
+        vatDeductibility: suggestDeductibility(defaultCategory),
+        supplierAllocationNumber: ''
       });
     }
     setIsModalOpen(true);
@@ -183,9 +220,35 @@ export default function ExpensesView() {
       return;
     }
 
-    const data = {
-      ...formData,
+    // Derive the net/VAT split from the gross `amount` at the rate effective on the
+    // expense date (§3.1 single source of truth — UI just persists the inputs the
+    // calc module needs). For a non-VAT-registered business no split is stored.
+    const rate = showVatFields ? getVatRate(formData.date) : 0;
+    const vatRate = showVatFields ? rate : undefined;
+    const netAmount = showVatFields && rate > 0 ? amount / (1 + rate / 100) : undefined;
+    const vatAmount =
+      showVatFields && netAmount !== undefined ? amount - netAmount : undefined;
+
+    const data: Omit<Expense, 'id'> = {
+      date: formData.date,
+      vendor: formData.vendor,
+      category: formData.category,
       amount,
+      receiptStatus: formData.receiptStatus,
+      receiptName: formData.receiptName,
+      receiptUrl: formData.receiptUrl,
+      // Input-VAT fields are only persisted for a VAT-registered business; an Osek
+      // Patur leaves them undefined (the calc module never infers a claim, §3.1/§8).
+      ...(showVatFields
+        ? {
+            vatRate,
+            netAmount,
+            vatAmount,
+            hasValidTaxInvoice: formData.hasValidTaxInvoice,
+            vatDeductibility: formData.vatDeductibility,
+            supplierAllocationNumber: formData.supplierAllocationNumber.trim() || undefined,
+          }
+        : {}),
     };
 
     let expenseId = editingExpense?.id;
@@ -194,7 +257,8 @@ export default function ExpensesView() {
         updateExpense(editingExpense.id, data);
       } else {
         expenseId = uuidv4();
-        addExpense({ ...data, id: expenseId } as Expense);
+        const newExpense: Omit<Expense, 'id'> & { id: string } = { ...data, id: expenseId };
+        addExpense(newExpense);
       }
 
       // Close modal immediately for better UX
@@ -204,8 +268,8 @@ export default function ExpensesView() {
         console.log('Uploading receipt...');
         // Pass metadata directly to avoid state sync race conditions
         uploadReceipt(selectedFile, expenseId, {
-          vendor: data.vendor,
-          date: data.date
+          vendor: formData.vendor,
+          date: formData.date
         });
       }
 
@@ -633,7 +697,16 @@ export default function ExpensesView() {
                 className="flex h-11 md:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 value={formData.category}
                 required
-                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  category: e.target.value,
+                  // Re-apply the deductibility assist when the category changes,
+                  // unless the user already moved off the suggestion for the old one.
+                  vatDeductibility:
+                    formData.vatDeductibility === suggestDeductibility(formData.category)
+                      ? suggestDeductibility(e.target.value)
+                      : formData.vatDeductibility,
+                })}
               >
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -674,6 +747,73 @@ export default function ExpensesView() {
                 </>
               )}
             </div>
+
+            {showVatFields && (() => {
+              const rate = getVatRate(formData.date);
+              const gross = parseFloat(formData.amount);
+              const net = !isNaN(gross) && rate > 0 ? gross / (1 + rate / 100) : 0;
+              const vat = !isNaN(gross) ? gross - net : 0;
+              return (
+                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-slate-700">{t('expenses.vat.section_title')}</p>
+                    <span className="text-xs text-slate-400">{t('expenses.vat.rate_label', { rate })}</span>
+                  </div>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                      checked={formData.hasValidTaxInvoice}
+                      onChange={(e) => setFormData({ ...formData, hasValidTaxInvoice: e.target.checked })}
+                    />
+                    <span>
+                      <span className="text-sm font-medium text-slate-700">{t('expenses.vat.has_tax_invoice')}</span>
+                      <span className="block text-xs text-slate-400">{t('expenses.vat.has_tax_invoice_help')}</span>
+                    </span>
+                  </label>
+
+                  {formData.hasValidTaxInvoice && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="rounded-md bg-white border border-slate-200 p-2">
+                          <p className="text-slate-400">{t('expenses.vat.net')}</p>
+                          <p className="font-bold text-slate-900">{formatCurrency(net)}</p>
+                        </div>
+                        <div className="rounded-md bg-white border border-slate-200 p-2">
+                          <p className="text-slate-400">{t('expenses.vat.vat')}</p>
+                          <p className="font-bold text-slate-900">{formatCurrency(vat)}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-700">{t('expenses.vat.deductibility')}</label>
+                        <select
+                          className="flex h-11 md:h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          value={formData.vatDeductibility}
+                          onChange={(e) => setFormData({ ...formData, vatDeductibility: e.target.value as VatDeductibility })}
+                        >
+                          <option value="full">{t('expenses.vat.deductibility_full')}</option>
+                          <option value="two_thirds">{t('expenses.vat.deductibility_two_thirds')}</option>
+                          <option value="none">{t('expenses.vat.deductibility_none')}</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-700">{t('expenses.vat.supplier_allocation')}</label>
+                        <Input
+                          className="h-11 md:h-10"
+                          placeholder={t('expenses.vat.supplier_allocation_placeholder')}
+                          value={formData.supplierAllocationNumber}
+                          onChange={(e) => setFormData({ ...formData, supplierAllocationNumber: e.target.value })}
+                        />
+                        <p className="text-xs text-slate-400">{t('expenses.vat.supplier_allocation_help')}</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="px-8 font-bold">

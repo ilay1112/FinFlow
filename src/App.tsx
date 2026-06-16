@@ -18,6 +18,7 @@ import InvoiceFormPage from './pages/InvoiceFormPage';
 import ClientsPage from './pages/ClientsView';
 import BookingAgentsPage from './pages/BookingAgentsView';
 import TaxesPage from './pages/TaxesView';
+import VatReportPage from './pages/VatReportView';
 import ProfilePage from './pages/ProfileView';
 
 // Loading fallback
@@ -74,6 +75,7 @@ function AppRoutes() {
         <Route path="clients" element={<ClientsPage />} />
         <Route path="booking-agents" element={<BookingAgentsPage />} />
         <Route path="taxes" element={<TaxesPage />} />
+        <Route path="vat" element={<VatReportPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

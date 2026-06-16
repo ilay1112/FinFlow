@@ -64,6 +64,19 @@ const OSEK_PATUR_CEILING_TABLE: DatedValue<number>[] = [
   { effectiveFrom: '2026-01-01', value: 122833 },
 ];
 
+/**
+ * Annual turnover (₪) at/above which an Osek Murshe must file VAT MONTHLY rather
+ * than bi-monthly, by effective date. The statutory figure is VAT Law §67 =
+ * ₪1,500,000; it is CPI-indexed and the indexed value is ~₪1,502,000. We carry the
+ * statutory ₪1,500,000 here (shlomit verified live against VAT Law §67, 2026-06).
+ *
+ * ADVISOR-CONFIRM (report §9 Q1): confirm the exact indexed figure (~₪1,502,000)
+ * with a רו"ח / יועץ מס before relying on it to auto-suggest monthly filing.
+ */
+const VAT_MONTHLY_FILING_THRESHOLD_TABLE: DatedValue<number>[] = [
+  { effectiveFrom: '2026-01-01', value: 1500000 },
+];
+
 export interface TaxBracket {
   /** Upper income limit of this bracket (inclusive); `Infinity` for the top band. */
   limit: number;
@@ -105,6 +118,15 @@ export function getAllocationThreshold(date: string): number {
 /** Returns the Esek Patur annual turnover ceiling (₪) effective on the given ISO date. */
 export function getOsekPaturCeiling(date: string): number {
   return resolveDated(OSEK_PATUR_CEILING_TABLE, date);
+}
+
+/**
+ * Returns the annual turnover (₪) at/above which an Osek Murshe must file VAT
+ * monthly (rather than bi-monthly), effective on the given ISO date.
+ * ADVISOR-CONFIRM the exact indexed figure (report §9 Q1).
+ */
+export function getVatMonthlyFilingThreshold(date: string): number {
+  return resolveDated(VAT_MONTHLY_FILING_THRESHOLD_TABLE, date);
 }
 
 /** Returns the progressive income-tax brackets effective on the given ISO date. */

@@ -42,7 +42,10 @@ const DEFAULT_STATE: AppState = {
     address: '',
     phone: '',
     email: '',
-    type: 'EsekPatur'
+    type: 'EsekPatur',
+    vatReportingPeriod: 'bimonthly',
+    vatCashBasis: false,
+    isDetailedFiler: false
   }
 };
 
