@@ -80,21 +80,24 @@ const VAT_MONTHLY_FILING_THRESHOLD_TABLE: DatedValue<number>[] = [
 /**
  * Israeli Cash Law (חוק לצמצום השימוש במזומן) parameters for a transaction where one
  * side is a business (עוסק) — FinFlow's issuer is always an עוסק, so this rule governs
- * every receipt the app issues. The legal cap on the CASH portion of a single deal is
- * the LOWER of `flatCap` or `dealFraction * total`.
+ * every receipt the app issues. The cash cap is computed in
+ * invoiceMath.cashCapForTotal: up to `flatCap` (the threshold) the whole deal may be
+ * cash; above it the cap is the lower of `dealFraction * total` and `flatCap`.
  */
 export interface CashLimit {
-  /** Absolute cash cap, ₪ (business transaction). */
+  /** Cash threshold, ₪: deals at/below it may be 100% cash; the absolute cash cap above it. */
   flatCap: number;
-  /** Fraction-of-deal cap (e.g. 0.10 = 10% of the transaction value). */
+  /** Fraction-of-deal cap above the threshold (e.g. 0.10 = 10% of the transaction value). */
   dealFraction: number;
 }
 
 /**
  * Cash Law business-transaction cap by effective date. Verified by shlomit
- * (CASH_LAW_PAYMENTS_SPEC.md, researched 2026-06-17): the lower of ₪6,000 or 10% of
- * the transaction value, in force since 1 August 2022 (reduced from ₪11,000). The
- * 10% rule binds below ₪60,000; the flat ₪6,000 binds at/above ₪60,000.
+ * (CASH_LAW_PAYMENTS_SPEC.md, researched 2026-06-17): deals up to the ₪6,000 threshold
+ * may be settled fully in cash; above it the cash portion is capped at the lower of
+ * 10% of the transaction value or ₪6,000. In force since 1 August 2022 (reduced from
+ * ₪11,000). The 10% rule binds between ₪6,000 and ₪60,000; the flat ₪6,000 binds at/
+ * above ₪60,000.
  */
 const CASH_LIMIT_TABLE: DatedValue<CashLimit>[] = [
   { effectiveFrom: '2022-08-01', value: { flatCap: 6000, dealFraction: 0.1 } },
@@ -159,8 +162,8 @@ export function getIncomeTaxBrackets(date: string): TaxBracket[] {
 
 /**
  * Returns the Cash Law business-transaction cap parameters effective on the given
- * ISO date. The effective cap on the cash portion of a deal is the lower of
- * `flatCap` and `dealFraction * total` — computed in invoiceMath.cashCapForTotal.
+ * ISO date. The effective cap on the cash portion of a deal is computed in
+ * invoiceMath.cashCapForTotal (Condition A up to the threshold, Condition B above it).
  */
 export function getCashLimit(date: string): CashLimit {
   return resolveDated(CASH_LIMIT_TABLE, date);

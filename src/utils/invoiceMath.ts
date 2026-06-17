@@ -93,13 +93,23 @@ export function sumCashPayments(lines: PaymentLine[]): number {
 }
 
 /**
- * The legal cash cap for a deal under the Cash Law: the LOWER of the flat cap and
- * the fraction-of-deal cap. The 10% fraction binds below ₪60,000; the flat ₪6,000
- * binds at/above it. The caller resolves `limit` via getCashLimit(date) so this
- * stays pure and config-agnostic.
+ * The legal cash cap for a single deal under the Israeli Cash Reduction Law
+ * (חוק לצמצום השימוש במזומן, effective 2022-08-01). `total` is the transaction
+ * value including VAT; `limit.flatCap` is the ₪6,000 threshold and
+ * `limit.dealFraction` is the 0.10 fraction.
+ *
+ *   - Condition A — total <= threshold: the whole transaction may be cash (cap = total).
+ *   - Condition B — total >  threshold: cap = min(dealFraction * total, threshold).
+ *
+ * The caller resolves `limit` via getCashLimit(date) so this stays pure and
+ * config-agnostic.
  */
 export function cashCapForTotal(total: number, limit: CashLimit): number {
-  return Math.min(limit.flatCap, limit.dealFraction * total);
+  const threshold = limit.flatCap;
+  if (total <= threshold) {
+    return total;
+  }
+  return Math.min(limit.dealFraction * total, threshold);
 }
 
 /**
@@ -116,7 +126,7 @@ export interface PaymentValidation {
   balanced: boolean;
   /** `total - sumPayments` (signed). */
   remaining: number;
-  /** The effective cash cap, `min(flatCap, dealFraction * total)`. */
+  /** The effective cash cap, per cashCapForTotal (Cash Law Condition A/B). */
   cashCap: number;
   /** Total tendered as cash. */
   cashTotal: number;
