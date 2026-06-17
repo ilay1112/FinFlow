@@ -17,7 +17,19 @@ export const FINANCE_CACHE_KEYS = [
   'finance_invoices',
   'finance_business_settings',
   'finance_active_business',
+  // Durable "unsynced edits pending" flag (see FinanceContext). It only refers to
+  // the data above, so it must be purged on the same logout/account-switch wipe —
+  // a stale dirty flag against another user's (now-cleared) data is meaningless.
+  'finance_pending_save',
 ] as const;
+
+/**
+ * localStorage key carrying the durable dirty flag: set when a Drive save fails (so
+ * the most recent edits live only in the local cache) and cleared once a save
+ * succeeds. It survives reload so the app knows, on next launch, that the cached
+ * data is ahead of Drive and must be flushed rather than overwritten.
+ */
+export const FINANCE_PENDING_SAVE_KEY = 'finance_pending_save';
 
 /** Removes every cached `finance_*` key from localStorage. Safe to call repeatedly. */
 export function clearFinanceCache(): void {

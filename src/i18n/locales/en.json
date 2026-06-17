@@ -56,7 +56,13 @@
     "create_workspace": "Create Workspace",
     "workspace_name": "Workspace Name",
     "create_and_switch": "Create & Switch",
-    "workspace_placeholder": "e.g. My Side Hustle"
+    "workspace_placeholder": "e.g. My Side Hustle",
+    "sync_syncing": "Syncing…",
+    "sync_synced": "Drive Synced",
+    "sync_offline": "Offline",
+    "sync_unsynced": "Unsaved changes",
+    "sync_reconnect": "Reconnect to sync",
+    "sync_reconnect_hint": "Your session expired. Changes are saved on this device — sign in again to back them up to Drive."
   },
   "dashboard": {
     "title": "Dashboard",

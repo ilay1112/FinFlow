@@ -30,8 +30,8 @@ import { FloatingActionButton } from '../components/FloatingActionButton';
 
 export function AppLayout() {
   const { t, i18n } = useTranslation();
-  const { user, logout, isAuthenticated } = useAuth();
-  const { isLoading, isSyncing, syncError, businesses, activeBusiness, switchBusiness, createBusiness, businessSettings } = useFinance();
+  const { user, logout, login, isAuthenticated } = useAuth();
+  const { isLoading, isSyncing, syncError, hasUnsyncedChanges, sessionExpired, businesses, activeBusiness, switchBusiness, createBusiness, businessSettings } = useFinance();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBusinessDropdownOpen, setIsBusinessDropdownOpen] = useState(false);
@@ -40,6 +40,23 @@ export function AppLayout() {
   const businessDropdownRef = useRef<HTMLDivElement>(null);
   
   const isRtl = i18n.language === 'he';
+
+  // Single derived sync status for the status pill, in priority order:
+  // reconnect (session expired) > syncing > unsynced (save pending) > error > synced.
+  type SyncStatus = 'reconnect' | 'syncing' | 'unsynced' | 'error' | 'synced';
+  const syncStatus: SyncStatus =
+    sessionExpired ? 'reconnect'
+    : isSyncing ? 'syncing'
+    : hasUnsyncedChanges ? 'unsynced'
+    : syncError ? 'error'
+    : 'synced';
+  const isProblem = syncStatus === 'reconnect' || syncStatus === 'error' || syncStatus === 'unsynced';
+  const syncLabel =
+    syncStatus === 'reconnect' ? t('common.sync_reconnect')
+    : syncStatus === 'syncing' ? t('common.sync_syncing')
+    : syncStatus === 'unsynced' ? t('common.sync_unsynced')
+    : syncStatus === 'error' ? t('common.sync_offline')
+    : t('common.sync_synced');
 
   const handleLogout = async () => {
     await logout();
@@ -218,27 +235,38 @@ export function AppLayout() {
 
               {isAuthenticated && (
                 <div className="space-y-3">
-                  <div className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold uppercase tracking-wider transition-all",
-                    isSyncing ? "bg-indigo-50 border-indigo-200" : 
-                    syncError ? "bg-red-50 border-red-200" : 
-                    "bg-white border-slate-200"
-                  )}>
-                    {isSyncing ? (
+                  <button
+                    type="button"
+                    onClick={syncStatus === 'reconnect' ? login : undefined}
+                    disabled={syncStatus !== 'reconnect'}
+                    title={syncStatus === 'reconnect' ? t('common.sync_reconnect_hint') : undefined}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold uppercase tracking-wider transition-all text-left",
+                      syncStatus === 'reconnect' ? "bg-amber-50 border-amber-200 cursor-pointer hover:bg-amber-100" :
+                      syncStatus === 'syncing' ? "bg-indigo-50 border-indigo-200 cursor-default" :
+                      syncStatus === 'unsynced' ? "bg-amber-50 border-amber-200 cursor-default" :
+                      syncStatus === 'error' ? "bg-red-50 border-red-200 cursor-default" :
+                      "bg-white border-slate-200 cursor-default"
+                    )}
+                  >
+                    {syncStatus === 'syncing' ? (
                       <RefreshCw className="h-4 w-4 text-indigo-500 animate-spin" />
-                    ) : syncError ? (
+                    ) : syncStatus === 'reconnect' || syncStatus === 'unsynced' ? (
+                      <AlertCircle className="h-4 w-4 text-amber-500" />
+                    ) : syncStatus === 'error' ? (
                       <CloudOff className="h-4 w-4 text-red-500" />
                     ) : (
                       <Cloud className="h-4 w-4 text-green-500" />
                     )}
                     <span className={cn(
                       "flex-1 truncate",
-                      isSyncing ? "text-indigo-700" :
-                      syncError ? "text-red-700" : "text-slate-700"
+                      syncStatus === 'syncing' ? "text-indigo-700" :
+                      syncStatus === 'reconnect' || syncStatus === 'unsynced' ? "text-amber-700" :
+                      syncStatus === 'error' ? "text-red-700" : "text-slate-700"
                     )}>
-                      {isSyncing ? 'Syncing...' : syncError ? 'Offline' : 'Drive Synced'}
+                      {syncLabel}
                     </span>
-                  </div>
+                  </button>
 
                   <div className="flex flex-col gap-3 px-1">
                     <div className="flex items-center gap-3">
@@ -278,20 +306,30 @@ export function AppLayout() {
               <div className="flex items-center justify-between px-2">
                 <LanguageSwitcher mini />
                 
-                <div className={cn(
-                  "flex items-center justify-center h-9 w-9 rounded-xl border shadow-sm transition-all",
-                  isSyncing ? "bg-indigo-50 border-indigo-200" : 
-                  syncError ? "bg-red-50 border-red-200" : 
-                  "bg-white border-slate-200"
-                )}>
-                  {isSyncing ? (
+                <button
+                  type="button"
+                  onClick={syncStatus === 'reconnect' ? login : undefined}
+                  disabled={syncStatus !== 'reconnect'}
+                  aria-label={syncLabel}
+                  title={syncStatus === 'reconnect' ? t('common.sync_reconnect_hint') : syncLabel}
+                  className={cn(
+                    "flex items-center justify-center h-9 w-9 rounded-xl border shadow-sm transition-all",
+                    syncStatus === 'syncing' ? "bg-indigo-50 border-indigo-200" :
+                    syncStatus === 'reconnect' || syncStatus === 'unsynced' ? "bg-amber-50 border-amber-200" :
+                    syncStatus === 'error' ? "bg-red-50 border-red-200" :
+                    "bg-white border-slate-200"
+                  )}
+                >
+                  {syncStatus === 'syncing' ? (
                     <RefreshCw className="h-4 w-4 text-indigo-500 animate-spin" />
-                  ) : syncError ? (
+                  ) : syncStatus === 'reconnect' || syncStatus === 'unsynced' ? (
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                  ) : syncStatus === 'error' ? (
                     <CloudOff className="h-4 w-4 text-red-500" />
                   ) : (
                     <Cloud className="h-4 w-4 text-green-500" />
                   )}
-                </div>
+                </button>
 
                 {isAuthenticated && (
                   <img 
@@ -347,11 +385,26 @@ export function AppLayout() {
           </div>
 
           <div className="flex items-center gap-4">
-            {syncError && (
-              <div className="hidden md:flex items-center gap-2 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-full border border-red-100">
-                <AlertCircle className="h-3.5 w-3.5" />
-                {syncError}
-              </div>
+            {isProblem && (
+              syncStatus === 'reconnect' ? (
+                <button
+                  type="button"
+                  onClick={login}
+                  title={t('common.sync_reconnect_hint')}
+                  className="hidden md:flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200 hover:bg-amber-100 transition-colors"
+                >
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {syncLabel}
+                </button>
+              ) : (
+                <div className={cn(
+                  "hidden md:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border",
+                  syncStatus === 'unsynced' ? "text-amber-700 bg-amber-50 border-amber-200" : "text-red-600 bg-red-50 border-red-100"
+                )}>
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {syncStatus === 'error' && syncError ? syncError : syncLabel}
+                </div>
+              )
             )}
             </div>
         </header>

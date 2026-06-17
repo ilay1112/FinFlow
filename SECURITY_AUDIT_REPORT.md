@@ -465,3 +465,88 @@ exploitable PII/exfiltration and the three follow-up gaps are closed and depende
 `0 vulnerabilities`. Residual risk is now dominated by the unchanged, architectural items —
 F-5 (access token in `localStorage`, no-backend constraint) and the F-9/F-10 hardening
 backlog — plus the single Low Drive-id-encoding nit above.
+
+---
+
+## @capacitor/app Integration Review (2026-06-17)
+
+Reviewed Alex's **uncommitted** working-tree change against baseline `30cce80`
+(`git diff 30cce80 -- src/`). Scope: the `@capacitor/app` integration and the auth code it
+touches — `AuthContext.tsx`, `services/auth.ts`, `FinanceContext.tsx`, `AppLayout.tsx`,
+`utils/financeCache.ts`, `i18n/locales/{en,he}.json`. **Verdict: safe to commit. No new
+HIGH/CRITICAL.** One pre-existing Low note (F-5) is unchanged.
+
+**What the change actually is:** a session-resilience / offline-first refactor. The *only*
+`@capacitor/app` API used is `App.addListener('appStateChange', …)` to refresh the token when
+the app returns to foreground (`AuthContext.tsx:114-117`). `@capacitor/app@8.1.0` was already a
+dependency at baseline (present in `package.json:14` and the lockfile pre-change) — this commit
+adds **no new dependency**. `npm audit` = 0 vulnerabilities; GitHub Advisory DB returns none for
+`@capacitor/app`.
+
+### 1. Deeplink / appUrlOpen handling — SAFE (not present)
+No `appUrlOpen`, `getLaunchUrl`, `backButton`, or any URL-bearing listener was added
+(`grep` across `src/` finds only the single `appStateChange` listener at
+`AuthContext.tsx:115`). The `appStateChange` event payload is `{ isActive: boolean }` only — it
+carries no URL, code, or token, so there is **no** incoming-URL parse, no open-redirect, no
+OAuth-code/token interception sink, and no injection surface from a crafted deeplink. The entire
+deeplink threat class does not apply to this change. (OAuth redirect handling remains inside the
+`@capgo/capacitor-social-login` plugin, untouched here.)
+
+### 2. App.openUrl / external URL opening — SAFE (not present)
+No `App.openUrl` or other external-URL-open call was introduced. N/A.
+
+### 3. Auth regressions — SAFE (prior hardening preserved, and strengthened)
+- **F-3 finance_* purge on logout:** intact. `logout()` clears `auth_*` then calls
+  `clearFinanceCache()` (`AuthContext.tsx:238-247`); FinanceContext still runs its
+  flush-then-wipe on the auth `true->false` transition and now *also* clears the new
+  `finance_pending_save` key (`FinanceContext.tsx:627-633`; key added to `FINANCE_CACHE_KEYS`,
+  `financeCache.ts`). `setSessionExpired(false)` was added to logout (`AuthContext.tsx:236`) — no
+  leak.
+- **F-3 account-switch purge with fail-safe:** intact and unchanged in logic — keep-on-confirmed-
+  same-account guard (`AuthContext.tsx:153-158`), with the `catch` fail-safe `clearFinanceCache()`
+  on any failure to determine the prior account (`:159-163`). A silent re-auth returning no
+  `profile.email` still triggers the purge (`!!newEmail` false). Fires fail-safe on missing email:
+  confirmed.
+- **Token storage / refresh:** storage location unchanged (`localStorage`, F-5 — still OPEN,
+  architectural, not regressed). Refresh logic is *hardened*: `getValidAccessToken()` no longer
+  returns a stale/dead cached token after a failed refresh — it throws `AuthExpiredError`
+  (`auth.ts:191-228`), which callers map to the reconnect state. This removes the prior
+  dead-token-masquerading-as-live behaviour. Net security posture improves.
+- **No token in logs / app-state / URL events:** confirmed. The `appStateChange` callback logs
+  nothing and receives no token. `getValidAccessToken` logs only the *error* object on refresh
+  failure (`auth.ts:222`), never the token. The new `console.error` in `flushToDrive`
+  (`FinanceContext.tsx:427`) logs the error/reason string, not the token or token-bearing state.
+  No token is placed into any event payload, URL, or DOM by this change.
+
+### 4. Foreground/resume data refresh — SAFE (per-workspace gate + concurrency guard preserved)
+Critical distinction: the resume listener refreshes the **token only** — it does not re-fetch
+Drive data. `refreshOnForeground()` calls `getValidAccessToken()` and updates `accessToken` /
+`sessionExpired` (`AuthContext.tsx:100-112`). Data re-fetch (`syncFromDrive`) is still driven by
+the existing `[activeBusiness, isAuthenticated, accessToken]` effect, which retains:
+- the **per-workspace gate** — local cache is only treated as authoritative when
+  `loadedBusinessId.current === activeBusiness.id` (`FinanceContext.tsx:466-468`); a workspace
+  switch ignores the prior workspace's in-memory state, so no cross-workspace leak; and the
+  persistence effect still bails when `loadedBusinessId.current !== activeBusiness.id`
+  (`:552`).
+- the **optimistic-concurrency guard** — saves still go through `saveAppStateGuarded` with
+  `driveVersion.current` (`FinanceContext.tsx:405-411`) and adopt the merged result on a detected
+  concurrent write (`:415-421`). The new load-time `mergeAppState(localSnapshot, driveData)`
+  (`:485-487`) is union-by-id local-wins and only engages for the *same* workspace's cache, so it
+  reconciles rather than clobbers — it does not weaken the version guard. No cross-workspace leak
+  and no concurrency-guard regression found.
+
+### 5. New PII exposure via lifecycle events / platform-gating — SAFE
+The `appStateChange` event exposes no PII (boolean only). Native-only code is correctly
+platform-gated: `Capacitor.isNativePlatform()` selects the native `App.addListener` path and the
+web build falls back to `document.visibilitychange` (`AuthContext.tsx:114-131`), with both
+listeners properly removed on cleanup (`h.remove()` / `removeEventListener`) and an `active`
+guard to drop late async results. No `@capacitor/app` native API runs on web. The new i18n
+strings are static UI labels (no PII).
+
+### Verdict
+Safe to commit. The change introduces no new attack surface from `@capacitor/app` (no
+deeplink/openUrl), preserves the F-3 logout and account-switch purges (with the missing-email
+fail-safe), preserves the per-workspace isolation gate and the optimistic-concurrency guard, and
+actually strengthens token handling (no dead-token fallback). No token is logged or exposed via
+lifecycle events. Residual risk unchanged: F-5 (token in `localStorage`, architectural) and the
+F-9/F-10 hardening backlog. Overall residual risk remains **Low–Medium**.

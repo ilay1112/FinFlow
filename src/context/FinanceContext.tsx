@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
 import * as googleDrive from '../services/googleDrive';
@@ -12,7 +12,8 @@ import {
 import { getCashLimit } from '../config/taxConfig';
 import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 import { normalizeAppState } from '../utils/appStateSchema';
-import { clearFinanceCache } from '../utils/financeCache';
+import { clearFinanceCache, FINANCE_PENDING_SAVE_KEY } from '../utils/financeCache';
+import { authService, isAuthError } from '../services/auth';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -208,6 +209,14 @@ interface FinanceContextType {
   isSyncing: boolean;
   isInitialized: boolean;
   syncError: string | null;
+  /**
+   * True when local edits exist that have NOT been confirmed saved to Drive (a save
+   * failed, or the session is expired). Durable across reload via localStorage, so the
+   * UI can always warn the user their changes aren't backed up yet.
+   */
+  hasUnsyncedChanges: boolean;
+  /** Mirror of AuthContext.sessionExpired, surfaced here for the data-status UI. */
+  sessionExpired: boolean;
   addExpense: (expense: Omit<Expense, 'id'>) => Expense;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
@@ -232,7 +241,7 @@ interface FinanceContextType {
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { accessToken, isAuthenticated } = useAuth();
+  const { accessToken, isAuthenticated, sessionExpired, markSessionExpired } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [clients, setClients] = useState<Client[]>([]);
@@ -247,13 +256,42 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isSyncing, setIsSyncing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  
+  // Durable "unsynced edits pending" flag. Seeded from localStorage so a save that
+  // failed before a reload is still known to be pending on next launch — that knowledge
+  // is what stops syncFromDrive from overwriting the ahead-of-Drive local cache.
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(FINANCE_PENDING_SAVE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  // Mark/clear the durable dirty flag (state + localStorage together so they never drift).
+  const markPendingSave = useCallback((pending: boolean) => {
+    setHasUnsyncedChanges(pending);
+    try {
+      if (pending) localStorage.setItem(FINANCE_PENDING_SAVE_KEY, '1');
+      else localStorage.removeItem(FINANCE_PENDING_SAVE_KEY);
+    } catch (e) {
+      console.warn('Could not persist pending-save flag', e);
+    }
+  }, []);
+
   const driveFileId = useRef<string | null>(null);
   const driveVersion = useRef<string | null>(null);
   // Id of the workspace whose data is currently loaded into state. Persistence is
   // gated on this matching activeBusiness, so during a workspace switch we never
   // write the previous workspace's data into the new workspace's app_data.json.
   const loadedBusinessId = useRef<string | null>(null);
+  // Set true whenever we ADOPT remote/merged state into local (a clean Drive load,
+  // a load-time merge, or a save-time concurrent-merge adoption). Those setState calls
+  // re-fire the auto-save effect even though the USER changed nothing; the effect
+  // consumes this once (sets it false) and returns WITHOUT marking dirty or scheduling
+  // a flush, so a load can't flicker the unsynced pill or trigger a no-delta Drive write.
+  // The next state change is a real edit, finds it false, and persists normally. React 19
+  // batches a load's setState calls into a single effect run, so consume-once is correct.
+  const justLoadedRef = useRef(false);
 
   // F-3 — latest in-memory state and the token, mirrored into refs so the logout
   // flush can persist the most recent edits to Drive BEFORE the finance cache is
@@ -262,6 +300,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const accessTokenRef = useRef<string | null>(null);
   // True once we have data worth flushing for the loaded workspace.
   const hasPendingDataRef = useRef(false);
+  // Retry/backoff bookkeeping for failed Drive saves: a handle to a scheduled retry and
+  // the current consecutive-failure count (drives exponential backoff).
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttemptRef = useRef(0);
+  // Indirection so a scheduled retry can call the latest flushToDrive without the
+  // callback referencing itself by name (avoids a use-before-declared cycle).
+  const flushToDriveRef = useRef<((reason: 'auto' | 'retry' | 'reconnect') => Promise<void>) | null>(null);
 
   // Keep the flush refs in sync with the latest render's state/token (in an effect,
   // not during render, so reads of these refs at logout always see the freshest data).
@@ -344,26 +389,133 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isAuthenticated, accessToken]);
 
+  // Single source of truth for persisting the loaded workspace's state to Drive. Used
+  // by the debounced auto-save, the backoff retry, the load-time reconnect flush, and
+  // the reconnect effect. It reads the freshest state from latestStateRef so a retry
+  // always saves the LATEST edits, and routes through getValidAccessToken() so a
+  // near-expiry token is refreshed at the moment of save. On a hard 401/403 it flips the
+  // auth-expired state instead of swallowing the error; on any failure it sets a DURABLE
+  // dirty flag and schedules an exponential-backoff retry — edits are never silently dropped.
+  const flushToDrive = useCallback(async (reason: 'auto' | 'retry' | 'reconnect') => {
+    const fileId = driveFileId.current;
+    const state = latestStateRef.current;
+    if (!fileId || !state) return;
+
+    // Cancel any pending retry; this attempt supersedes it.
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
+    setIsSyncing(true);
+    try {
+      const token = await authService.getValidAccessToken();
+      const { version, merged } = await googleDrive.saveAppStateGuarded(
+        token,
+        fileId,
+        driveVersion.current,
+        state
+      );
+      driveVersion.current = version;
+
+      // A concurrent write from another device was detected and merged in —
+      // adopt the merged result so this device reflects the other's changes. This
+      // adoption is load-induced, not a user edit: gate the auto-save effect so it
+      // doesn't re-dirty / re-flush off these setState calls. The merged state was
+      // already persisted by saveAppStateGuarded above (version bumped), so skipping
+      // the follow-up auto-save loses no needed write.
+      if (merged) {
+        justLoadedRef.current = true;
+        setExpenses(merged.expenses);
+        setCategories(merged.categories);
+        setClients(merged.clients);
+        setInvoices(merged.invoices);
+        setBookingAgents(merged.bookingAgents || []);
+      }
+      // Save confirmed on Drive: clear the durable dirty flag and reset backoff.
+      retryAttemptRef.current = 0;
+      markPendingSave(false);
+      setSyncError(null);
+    } catch (error) {
+      console.error(`Drive Save Error (${reason}):`, error);
+      // Edits live only in localStorage now — mark them durably pending so a reload
+      // knows the cache is ahead of Drive and must not be overwritten.
+      markPendingSave(true);
+
+      if (isAuthError(error)) {
+        // Token is dead. Surface the reconnect state; a successful re-auth / foreground
+        // refresh will trigger a flush via the reconnect effect below.
+        markSessionExpired();
+        setSyncError(null);
+      } else {
+        // Transient (network/quota): schedule an exponential-backoff retry, capped.
+        setSyncError('Sync delayed: changes saved locally, retrying…');
+        const attempt = Math.min(retryAttemptRef.current, 5);
+        const delay = Math.min(1000 * 2 ** attempt, 60_000);
+        retryAttemptRef.current = attempt + 1;
+        retryTimerRef.current = setTimeout(() => { void flushToDriveRef.current?.('retry'); }, delay);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [markPendingSave, markSessionExpired]);
+
+  // Keep the ref pointed at the latest flushToDrive for the scheduled-retry indirection.
+  useEffect(() => { flushToDriveRef.current = flushToDrive; }, [flushToDrive]);
+
   // Sync Data when Active Business Changes
   useEffect(() => {
     if (isAuthenticated && accessToken && activeBusiness) {
       const syncFromDrive = async () => {
         setIsLoading(true);
-        try {
-          const { fileId } = await googleDrive.initAppState(accessToken, activeBusiness.name);
-          driveFileId.current = fileId;
-          const driveData = await googleDrive.fetchAppState(accessToken, fileId);
-          driveVersion.current = await googleDrive.getFileVersion(accessToken, fileId);
 
-          const loadedInvoices = (driveData.invoices || []) as unknown as Invoice[];
-          setExpenses((driveData.expenses || []) as unknown as Expense[]);
-          setCategories(driveData.categories || DEFAULT_CATEGORIES);
-          setClients((driveData.clients || []) as unknown as Client[]);
-          setBookingAgents((driveData.bookingAgents || []) as unknown as BookingAgent[]);
+        // Snapshot the local cache that the hydrate effect already loaded into state.
+        // This is a PARTICIPANT in the load, not a throwaway: it may hold edits made
+        // while the token was dead that never reached Drive. We must never let a stale
+        // or empty Drive copy erase it (the data-loss bug). We only treat it as local
+        // for THIS workspace — during a workspace switch the in-memory state still
+        // belongs to the previous workspace, so we ignore it unless it was already
+        // marked loaded for the workspace we're now loading.
+        const isSameWorkspaceCache = loadedBusinessId.current === activeBusiness.id;
+        const localSnapshot: googleDrive.AppState | null =
+          isSameWorkspaceCache && latestStateRef.current ? latestStateRef.current : null;
+
+        try {
+          // Use a freshly-validated token (silent refresh if near expiry) rather than
+          // the possibly-stale context token, so a load right after resume doesn't 401.
+          const token = await authService.getValidAccessToken();
+
+          const { fileId } = await googleDrive.initAppState(token, activeBusiness.name);
+          driveFileId.current = fileId;
+          const driveData = await googleDrive.fetchAppState(token, fileId);
+          driveVersion.current = await googleDrive.getFileVersion(token, fileId);
+
+          // Merge Drive INTO local (union-by-id, local-wins) so a record edited locally
+          // is never erased by a Drive copy that lacks it. When there's no same-workspace
+          // local cache (clean load / workspace switch), this degenerates to "Drive
+          // wins", preserving the original behaviour. The existing save-time merge path
+          // is unchanged; this just applies the same reconciliation at LOAD time too.
+          const effective: googleDrive.AppState = localSnapshot
+            ? googleDrive.mergeAppState(localSnapshot, driveData)
+            : driveData;
+
+          // These setState calls are load-induced (clean Drive load or load-time
+          // merge), not user edits. Flag the auto-save effect to consume the render
+          // they produce without marking dirty / scheduling a flush — a load must not
+          // flicker the unsynced pill or write a no-delta app_data.json. Any genuinely
+          // pending edits merged in are flushed explicitly via the hasUnsyncedChanges
+          // branch below, so this skip never drops a needed write.
+          justLoadedRef.current = true;
+
+          const loadedInvoices = (effective.invoices || []) as unknown as Invoice[];
+          setExpenses((effective.expenses || []) as unknown as Expense[]);
+          setCategories(effective.categories || DEFAULT_CATEGORIES);
+          setClients((effective.clients || []) as unknown as Client[]);
+          setBookingAgents((effective.bookingAgents || []) as unknown as BookingAgent[]);
           setInvoices(loadedInvoices);
           const loadedSettings = {
             ...DEFAULT_BUSINESS_SETTINGS,
-            ...(driveData.businessSettings || {})
+            ...(effective.businessSettings || {})
           } as BusinessSettings;
           // 1a migration: seed the gapless per-type counters from existing documents
           // the first time we load a workspace that predates them, so the next
@@ -372,14 +524,33 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...loadedSettings,
             docCounters: seedDocCounters(loadedInvoices, loadedSettings.docCounters),
           });
-          
+
           localStorage.setItem('finance_active_business', JSON.stringify(activeBusiness));
           // Mark this workspace's data as loaded — only now is it safe to persist.
           loadedBusinessId.current = activeBusiness.id;
+          setSyncError(null);
+
+          // If we merged unsynced local edits back over Drive, flush them now so the
+          // dirty flag clears and Drive catches up. If nothing was pending, this is a
+          // harmless idempotent save of the reconciled state.
+          if (localSnapshot && hasUnsyncedChanges) {
+            void flushToDrive('reconnect');
+          }
         } catch (error) {
           const err = error as Error;
           console.error('Drive Sync Error:', err);
-          setSyncError(`Drive Sync Error: ${err.message || 'Unknown error'}`);
+          // Do NOT overwrite the local cache on a failed fetch — the hydrate already
+          // loaded the last good copy, and clobbering it is the executioner half of the
+          // data-loss bug. Just surface the failure.
+          if (isAuthError(err)) {
+            markSessionExpired();
+            setSyncError(null);
+          } else {
+            setSyncError(`Drive Sync Error: ${err.message || 'Unknown error'}`);
+          }
+          // Keep the local cache authoritative for this workspace so subsequent edits
+          // persist and a later successful save can flush them.
+          if (localSnapshot) loadedBusinessId.current = activeBusiness.id;
         } finally {
           setIsLoading(false);
           setIsInitialized(true);
@@ -387,6 +558,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       syncFromDrive();
     }
+    // flushToDrive/hasUnsyncedChanges are intentionally omitted: this effect must run on
+    // workspace/auth changes only, and reads the latest pending state via refs/closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBusiness, isAuthenticated, accessToken]);
 
   // Persistent LocalStorage and Auto-Save to Drive
@@ -401,7 +575,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // F-3 — this workspace's data is now live in state; the logout flush may persist it.
     hasPendingDataRef.current = true;
 
-    // Always save to localStorage as backup
+    // Always mirror the latest state to the localStorage backup — safe and desirable on
+    // BOTH a real edit and a load adoption (keeps the cache in step with freshly-loaded
+    // Drive data). This is unconditional; only the dirty flag + Drive write are gated.
     try {
       localStorage.setItem('finance_expenses', JSON.stringify(expenses));
       localStorage.setItem('finance_categories', JSON.stringify(categories));
@@ -413,40 +589,48 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Could not save finance data to localStorage', storageError);
     }
 
-    // Save to Drive if authenticated
-    if (isAuthenticated && accessToken && driveFileId.current) {
-      const timer = setTimeout(async () => {
-        setIsSyncing(true);
-        try {
-          const localState = { expenses, categories, clients, invoices, bookingAgents, businessSettings };
-          const { version, merged } = await googleDrive.saveAppStateGuarded(
-            accessToken,
-            driveFileId.current!,
-            driveVersion.current,
-            localState
-          );
-          driveVersion.current = version;
+    // Consume-once gate: if this run was triggered by a load/merge adoption (not a user
+    // edit), the state matches Drive (or was just persisted by the merge save), so bail
+    // BEFORE marking dirty or scheduling a flush — a load must not flicker the unsynced
+    // pill or write a no-delta app_data.json. React 19 batches the load's setState calls
+    // into a single effect run, so one consume covers the whole load. The next render is
+    // a real edit, finds the flag false, and persists normally.
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      return;
+    }
 
-          // A concurrent write from another device was detected and merged in —
-          // adopt the merged result so this device reflects the other's changes.
-          if (merged) {
-            setExpenses(merged.expenses);
-            setCategories(merged.categories);
-            setClients(merged.clients);
-            setInvoices(merged.invoices);
-            setBookingAgents(merged.bookingAgents || []);
-          }
-          setSyncError(null);
-        } catch (error) {
-          console.error('Drive Save Error:', error);
-          setSyncError('Sync delayed: Network or quota issue. Data saved locally.');
-        } finally {
-          setIsSyncing(false);
-        }
-      }, 1000); // Debounce saves
+    // An edit just landed: from Drive's perspective the cache is now ahead until a save
+    // confirms. Mark it pending up front so a crash/close inside the debounce window is
+    // still recorded as unsynced (the flag is cleared the moment a save succeeds).
+    markPendingSave(true);
+
+    // Debounced Drive save. We attempt even while sessionExpired so a token that came
+    // back (foreground refresh) gets used; flushToDrive re-flags expiry on a real 401.
+    if (driveFileId.current) {
+      const timer = setTimeout(() => { void flushToDrive('auto'); }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, isAuthenticated, accessToken, activeBusiness]);
+  }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, activeBusiness, flushToDrive, markPendingSave]);
+
+  // Reconnect flush: whenever we are authenticated, the session is NOT expired, and we
+  // still hold unsynced edits for the loaded workspace, push them to Drive. This fires
+  // when sessionExpired flips true -> false (foreground-resume token refresh or
+  // re-login) and when hasUnsyncedChanges first becomes true while online — recovering
+  // pending edits deterministically, without any fixed-interval timer.
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      !sessionExpired &&
+      hasUnsyncedChanges &&
+      driveFileId.current &&
+      activeBusiness &&
+      loadedBusinessId.current === activeBusiness.id
+    ) {
+      void flushToDrive('reconnect');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionExpired, isAuthenticated, hasUnsyncedChanges, activeBusiness]);
 
   // F-3 — On logout (auth flips true -> false), flush the latest in-memory state to
   // Drive BEFORE wiping the local cache, so a logout within the 1s save debounce can't
@@ -477,6 +661,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         driveVersion.current = null;
         loadedBusinessId.current = null;
         hasPendingDataRef.current = false;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        retryAttemptRef.current = 0;
+        markPendingSave(false);
 
         setExpenses([]);
         setCategories(DEFAULT_CATEGORIES);
@@ -490,7 +680,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       void flushAndClear();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, markPendingSave]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
     const newExpense = { ...expense, id: expense.id || uuidv4() };
@@ -839,8 +1029,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     <FinanceContext.Provider value={{ 
       expenses, clients, invoices, categories, bookingAgents, businessSettings,
       businesses, activeBusiness,
-      isLoading, isSyncing, isInitialized, syncError,
-      addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient, 
+      isLoading, isSyncing, isInitialized, syncError, hasUnsyncedChanges, sessionExpired,
+      addExpense, updateExpense, deleteExpense, addClient, updateClient, deleteClient,
       addBookingAgent, updateBookingAgent, deleteBookingAgent,
       addInvoice, updateInvoice, deleteInvoice, addCategory, deleteCategory, 
       updateBusinessSettings, uploadReceipt,

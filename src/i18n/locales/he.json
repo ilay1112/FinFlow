@@ -56,7 +56,13 @@
     "create_workspace": "צור סביבת עבודה",
     "workspace_name": "שם סביבת העבודה",
     "create_and_switch": "צור והחלף",
-    "workspace_placeholder": "לדוגמה: עסק צדדי שלי"
+    "workspace_placeholder": "לדוגמה: עסק צדדי שלי",
+    "sync_syncing": "מסנכרן…",
+    "sync_synced": "מסונכרן עם Drive",
+    "sync_offline": "לא מקוון",
+    "sync_unsynced": "שינויים שלא נשמרו",
+    "sync_reconnect": "התחבר מחדש לסנכרון",
+    "sync_reconnect_hint": "תוקף ההתחברות פג. השינויים נשמרו במכשיר זה — התחבר/י שוב כדי לגבותם ל-Drive."
   },
   "dashboard": {
     "title": "לוח בקרה",

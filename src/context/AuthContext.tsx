@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { authService } from '../services/auth';
 import { clearFinanceCache } from '../utils/financeCache';
 
@@ -13,6 +15,15 @@ interface AuthContextType {
   accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * True when a Drive/Gmail call has been rejected (401/403) or a silent refresh
+   * failed — i.e. the session is expired and writes are NOT reaching Drive. Editing
+   * may continue (offline-first), but the UI must surface a "reconnect" prompt and the
+   * persistence layer must keep edits durable instead of trusting Drive.
+   */
+  sessionExpired: boolean;
+  /** Flip the session-expired state. Called by data callers when they see a 401/403. */
+  markSessionExpired: () => void;
   login: () => void;
   logout: () => void;
 }
@@ -23,6 +34,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  const markSessionExpired = useCallback(() => setSessionExpired(true), []);
 
   // Load from LocalStorage on mount
   useEffect(() => {
@@ -30,33 +44,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const savedUser = localStorage.getItem('auth_user');
         const savedToken = localStorage.getItem('auth_token');
-        const savedExpiry = localStorage.getItem('auth_expiry');
 
-        if (savedUser && savedToken && savedExpiry) {
-          if (Date.now() < Number(savedExpiry)) {
-            // Check if the plugin still considers us logged in
-            const isPluginSessionValid = await authService.checkSession();
-            
-            if (isPluginSessionValid) {
-              const parsedUser = JSON.parse(savedUser);
-              
-              // Apply normalization to legacy stored URLs
-              if (parsedUser.picture && parsedUser.picture.includes('googleusercontent.com')) {
-                parsedUser.picture = parsedUser.picture.replace(/=s\d+-c$/, '=s192-c');
-              } else if (!parsedUser.picture) {
-                parsedUser.picture = `https://ui-avatars.com/api/?name=${encodeURIComponent(parsedUser.name || 'User')}&background=random`;
-              }
-              
-              setUser(parsedUser);
-              setAccessToken(savedToken);
-            } else {
-              // Session expired at the provider level
-              logout();
-            }
-          } else {
-            localStorage.removeItem('auth_user');
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('auth_expiry');
+        // We need a cached identity to even attempt a restore. Note we deliberately do
+        // NOT treat the hardcoded `auth_expiry` guess as PROOF of validity — that guess
+        // (now + 1h) is exactly what let a dead token masquerade as live, after which
+        // syncFromDrive would overwrite good local edits. Instead we ask the auth
+        // service for a *currently valid* token (silent refresh if needed). Only a real
+        // token restores the authenticated session.
+        if (savedUser && savedToken) {
+          const parsedUser = JSON.parse(savedUser);
+
+          // Apply normalization to legacy stored URLs
+          if (parsedUser.picture && parsedUser.picture.includes('googleusercontent.com')) {
+            parsedUser.picture = parsedUser.picture.replace(/=s\d+-c$/, '=s192-c');
+          } else if (!parsedUser.picture) {
+            parsedUser.picture = `https://ui-avatars.com/api/?name=${encodeURIComponent(parsedUser.name || 'User')}&background=random`;
+          }
+
+          // Always restore the cached identity so the app can render in an
+          // offline-first / "reconnect" state rather than bouncing to the login page
+          // and discarding still-unsynced local edits.
+          setUser(parsedUser);
+
+          try {
+            // Throws AuthExpiredError if no live token can be produced.
+            const validToken = await authService.getValidAccessToken();
+            setAccessToken(validToken);
+            setSessionExpired(false);
+          } catch {
+            // Token is dead and could not be refreshed silently. Keep the identity but
+            // flag the session as expired; the user must reconnect, and unsynced edits
+            // stay protected (FinanceContext will not let Drive clobber the cache).
+            setAccessToken(savedToken);
+            setSessionExpired(true);
           }
         }
       } catch (error) {
@@ -66,6 +86,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     loadAuth();
+  }, []);
+
+  // Proactive, lifecycle-driven token refresh. A backgrounded Capacitor WebView
+  // throttles/suspends interval timers, so a fixed setInterval is unreliable exactly
+  // when sessions go idle. Instead we refresh deterministically when the app returns to
+  // the foreground: Capacitor's App.appStateChange (native iOS/Android) and the web
+  // visibilitychange event. Reactive refresh-on-401 (in the data layer) remains the
+  // primary mechanism; this just covers the "app sat idle, came back" case up front.
+  useEffect(() => {
+    let active = true;
+
+    const refreshOnForeground = async () => {
+      // Only meaningful if we have a cached identity to refresh for.
+      if (!localStorage.getItem('auth_token')) return;
+      try {
+        const validToken = await authService.getValidAccessToken();
+        if (!active) return;
+        setAccessToken(validToken);
+        setSessionExpired(false);
+      } catch {
+        if (!active) return;
+        setSessionExpired(true);
+      }
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      const handlePromise = CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) void refreshOnForeground();
+      });
+      return () => {
+        active = false;
+        void handlePromise.then((h) => h.remove());
+      };
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshOnForeground();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const handleLogin = async () => {
@@ -100,6 +163,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         setAccessToken(result.accessToken);
+        // A fresh interactive login clears any prior "reconnect" state.
+        setSessionExpired(false);
 
         if (result.profile) {
           setUser(result.profile);
@@ -168,6 +233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setUser(null);
     setAccessToken(null);
+    setSessionExpired(false);
     try {
       localStorage.removeItem('auth_user');
       localStorage.removeItem('auth_token');
@@ -182,13 +248,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      accessToken, 
-      isAuthenticated: !!accessToken, 
+    <AuthContext.Provider value={{
+      user,
+      accessToken,
+      isAuthenticated: !!accessToken,
       isLoading,
-      login: handleLogin, 
-      logout 
+      sessionExpired,
+      markSessionExpired,
+      login: handleLogin,
+      logout
     }}>
       {children}
     </AuthContext.Provider>
