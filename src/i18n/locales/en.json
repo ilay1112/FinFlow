@@ -101,6 +101,8 @@
     "edit_expense": "Edit Expense",
     "view_receipt": "View Receipt",
     "download_receipt": "Download Receipt",
+    "loading_receipt": "Loading receipt...",
+    "receipt_load_error": "Could not load this receipt. Please try again.",
     "delete_description": "Are you sure you want to delete this expense? Its receipt file will also be permanently removed from Drive. Receipts are subject to a 7-year retention rule — this cannot be undone.",
     "from": "From",
     "to": "To",

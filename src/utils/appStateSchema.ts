@@ -13,6 +13,7 @@ import type {
   VatDeductibility,
   VatTreatment,
 } from '../context/FinanceContext';
+import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 
 /**
  * F-7 — `app_data.json` is the application's only data store and lives in the user's
@@ -32,20 +33,6 @@ import type {
  * are dropped, missing fields defaulted) rather than crashing the app, but nothing raw
  * is trusted downstream.
  */
-
-const DEFAULT_CATEGORIES = ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'];
-
-const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
-  name: '',
-  idNumber: '',
-  address: '',
-  phone: '',
-  email: '',
-  type: 'EsekPatur',
-  vatReportingPeriod: 'bimonthly',
-  vatCashBasis: false,
-  isDetailedFiler: false,
-};
 
 const BUSINESS_TYPES: readonly BusinessType[] = ['EsekPatur', 'EsekMorshe', 'Company'];
 const DOCUMENT_TYPES: readonly DocumentType[] = ['TaxInvoice', 'Receipt', 'TaxInvoiceReceipt', 'TransactionInvoice'];
@@ -90,6 +77,20 @@ function toStr(value: unknown, fallback = ''): string {
 
 function toOptionalStr(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * F-2 (root defense) — constrains an invoice id to a safe charset before it can flow
+ * into a header sink. The id is interpolated into the email attachment filename
+ * (`Content-Type`/`Content-Disposition` of buildMimeMessage); a tampered app_data.json
+ * must never carry CR/LF, control chars, or double-quotes in an id that could escape a
+ * quoted MIME parameter or start a new header. Strips those characters here so the value
+ * is safe at the source as well as at the sink. Ids are otherwise free-form
+ * (e.g. `INV-0001`), so we only remove the dangerous characters rather than reformat.
+ */
+function toSafeId(value: unknown): string {
+  // eslint-disable-next-line no-control-regex
+  return toStr(value).replace(/[\r\n\x00-\x1f\x7f"]/g, '');
 }
 
 /** Coerces to a finite number; returns `fallback` for NaN/Infinity/non-numbers. */
@@ -198,7 +199,9 @@ function normalizeBookingAgent(raw: unknown): BookingAgent | null {
 
 function normalizeInvoice(raw: unknown): Invoice | null {
   if (!isObject(raw)) return null;
-  const id = toStr(raw.id);
+  // F-2 — constrain the id charset at the source: it reaches the email attachment
+  // filename header sink, so strip any CR/LF/control/quote chars a tampered file carries.
+  const id = toSafeId(raw.id);
   if (!id) return null;
 
   const items = asArray(raw.items)

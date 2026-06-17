@@ -9,16 +9,18 @@ import {
   Trash2,
   Edit2,
   Eye,
-  ExternalLink,
   FileText,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Upload,
   Settings2,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 import { useFinance, type Expense, type VatDeductibility } from '../context/FinanceContext';
+import { authService } from '../services/auth';
+import { downloadDriveFileBlob, extractDriveFileId } from '../services/googleDrive';
 import { getVatRate } from '../config/taxConfig';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -75,8 +77,62 @@ export default function ExpensesView() {
   const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<Expense | null>(null);
+  // Authenticated receipt preview state. Since F-1 made receipts owner-private, the
+  // cookie-auth drive.google.com iframe fails for a browser whose default Google
+  // account differs from the FinFlow account. We download the bytes with the FinFlow
+  // token and render from a same-origin object URL instead (handles image + PDF).
+  const [receiptPreview, setReceiptPreview] = useState<{ url: string; isPdf: boolean } | null>(null);
+  const [receiptPreviewLoading, setReceiptPreviewLoading] = useState(false);
+  const [receiptPreviewError, setReceiptPreviewError] = useState(false);
   const [isNewReceiptAction, setIsNewReceiptAction] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Fetch the receipt bytes authenticated whenever a receipt is opened, and render from
+  // an object URL. The URL is revoked when the preview changes or the component unmounts.
+  useEffect(() => {
+    const url = viewingReceipt?.receiptUrl;
+    if (!url) {
+      setReceiptPreview(null);
+      setReceiptPreviewError(false);
+      setReceiptPreviewLoading(false);
+      return;
+    }
+
+    const fileId = extractDriveFileId(url);
+    if (!fileId) {
+      setReceiptPreview(null);
+      setReceiptPreviewError(true);
+      setReceiptPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setReceiptPreview(null);
+    setReceiptPreviewError(false);
+    setReceiptPreviewLoading(true);
+
+    (async () => {
+      try {
+        const token = await authService.getValidAccessToken();
+        const blob = await downloadDriveFileBlob(token, fileId);
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setReceiptPreview({ url: objectUrl, isPdf: blob.type === 'application/pdf' });
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to load receipt preview:', error);
+        setReceiptPreviewError(true);
+      } finally {
+        if (!cancelled) setReceiptPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [viewingReceipt?.receiptUrl]);
 
   // Handle URL actions (Quick Actions from Dashboard)
   useEffect(() => {
@@ -559,43 +615,34 @@ export default function ExpensesView() {
           <div className="aspect-[3/4] w-full bg-slate-50 rounded-lg border overflow-hidden relative group">
             {viewingReceipt?.receiptUrl ? (
               <>
-                {/* 
-                  We use the Google Docs Viewer with the 'srcid' parameter for maximum compatibility.
-                  The URL extraction logic finds the file ID from the webViewLink.
+                {/*
+                  F-1 follow-up: receipts are owner-private, so the bytes are fetched with
+                  the FinFlow access token (see effect above) and rendered from a same-origin
+                  object URL — a PDF in an iframe, an image in an <img>.
                 */}
-                {(() => {
-                  const fileId = viewingReceipt.receiptUrl.match(/\/d\/(.+?)\//)?.[1];
-                  if (fileId) {
-                    return (
-                      <iframe 
-                        src={`https://drive.google.com/file/d/${fileId}/preview`}
-                        className="w-full h-full border-none"
-                        title={viewingReceipt.receiptName}
-                        allow="autoplay"
-                      />
-                    );
-                  }
-                  return (
-                    <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                      <FileText className="h-16 w-16 text-slate-300 mb-4" />
-                      <p className="text-sm text-slate-500">Preview not available for this link format.</p>
-                      <Button asChild variant="outline" size="sm" className="mt-4">
-                        <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
-                          Open Directly <ExternalLink className="ms-2 h-3 w-3" />
-                        </a>
-                      </Button>
-                    </div>
-                  );
-                })()}
-                
-                {/* Overlay Action Button (Visible on Hover for easier direct access) */}
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button asChild size="sm" variant="secondary" className="shadow-lg backdrop-blur-md bg-white/80">
-                    <a href={viewingReceipt.receiptUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                </div>
+                {receiptPreviewLoading ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <Loader2 className="h-10 w-10 mb-4 animate-spin" />
+                    <p className="text-sm">{t('expenses.loading_receipt')}</p>
+                  </div>
+                ) : receiptPreviewError || !receiptPreview ? (
+                  <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                    <FileText className="h-16 w-16 text-slate-300 mb-4" />
+                    <p className="text-sm text-slate-500">{t('expenses.receipt_load_error')}</p>
+                  </div>
+                ) : receiptPreview.isPdf ? (
+                  <iframe
+                    src={receiptPreview.url}
+                    className="w-full h-full border-none"
+                    title={viewingReceipt.receiptName}
+                  />
+                ) : (
+                  <img
+                    src={receiptPreview.url}
+                    className="w-full h-full object-contain"
+                    alt={viewingReceipt.receiptName || t('expenses.receipt')}
+                  />
+                )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -605,7 +652,7 @@ export default function ExpensesView() {
               </div>
             )}
           </div>
-          
+
           <div className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-lg border">
             <div>
               <p className="text-slate-500">{t('common.amount')}</p>
@@ -620,9 +667,9 @@ export default function ExpensesView() {
             <Button variant="outline" onClick={() => setViewingReceipt(null)} className="h-11 md:h-10 order-2 sm:order-1">
               {t('common.cancel')}
             </Button>
-            {viewingReceipt?.receiptUrl && (
+            {viewingReceipt?.receiptUrl && receiptPreview && (
               <Button asChild className="gap-2 h-11 md:h-10 order-1 sm:order-2 font-bold">
-                <a href={viewingReceipt.receiptUrl} download={viewingReceipt.receiptName}>
+                <a href={receiptPreview.url} download={viewingReceipt.receiptName}>
                   <Download className="h-4 w-4" />
                   {t('expenses.download_receipt')}
                 </a>

@@ -45,6 +45,17 @@ function sanitizeHeaderValue(value: string): string {
 }
 
 /**
+ * F-2 — Sanitizes a value placed inside a quoted MIME header parameter
+ * (`name="..."` / `filename="..."`). On top of {@link sanitizeHeaderValue} (which
+ * removes CR/LF/control chars so the value can't start a new header), this also strips
+ * double-quotes so a tampered value can't break out of the quoted-string and inject
+ * extra parameters/headers. Used for the attachment filename derived from the invoice id.
+ */
+function sanitizeQuotedHeaderParam(value: string): string {
+  return sanitizeHeaderValue(value).replace(/"/g, '');
+}
+
+/**
  * F-4 — HTML-escapes a dynamic value before it is interpolated into the hand-built
  * `text/html` email body. The in-app/PDF path is safe (React escapes JSX); this is the
  * only place untrusted strings reach raw HTML, so every dynamic value must pass through
@@ -86,7 +97,9 @@ async function buildMimeMessage(params: {
   invoiceId: string;
 }): Promise<string> {
   const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const filename = `invoice_${params.invoiceId}.pdf`;
+  // F-2 — the attachment filename embeds the (untrusted) invoice id; sanitize it so a
+  // tampered id can't inject CR/LF/control chars or break out of the quoted parameter.
+  const filename = sanitizeQuotedHeaderParam(`invoice_${params.invoiceId}.pdf`);
   const encodedSubject = mimeEncodeHeader(params.subject);
 
   const pdfBytes = new Uint8Array(await params.pdfBlob.arrayBuffer());

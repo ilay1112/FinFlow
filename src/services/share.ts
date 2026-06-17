@@ -6,12 +6,6 @@ import type { Invoice, BusinessType, InvoiceItem } from '../context/FinanceConte
 interface ShareInvoiceParams {
   invoice: Invoice;
   clientPhone?: string;
-  /**
-   * @deprecated kept for back-compat. F-1 removed the public Drive link from the
-   * WhatsApp flow — the actual PDF is shared instead — so this is no longer embedded
-   * in the message. Still accepted so callers don't have to change.
-   */
-  driveUrl?: string;
   businessName: string;
   businessType: BusinessType;
   /** The rendered invoice PDF. Required to share the document as a real attachment. */

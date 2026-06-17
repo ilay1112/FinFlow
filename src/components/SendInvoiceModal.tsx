@@ -52,26 +52,31 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
     return '';
   };
 
-  async function getPDFAndDriveUrl(): Promise<{ pdfBlob: Blob; driveUrl: string }> {
+  // Renders the invoice PDF and ensures it's archived to the owner's Drive. The upload
+  // is NOT for sharing (F-1 removed the public link from both the email and WhatsApp
+  // paths — the actual PDF bytes are attached/shared directly). It exists so the invoice
+  // gets a persisted `pdfUrl`, which `resolveCopyType` reads as the "already issued"
+  // signal to stamp originals vs copies. Returns only the PDF blob the senders need.
+  async function preparePdf(): Promise<Blob> {
     setStep('generating');
     await waitForTemplateReady();
 
     const pdfBlob = await generateInvoicePDFBlob(TEMPLATE_ID);
     if (!pdfBlob) throw new Error('PDF generation failed');
 
+    // Already archived once — skip the re-upload but keep the existing pdfUrl signal.
+    if (invoice.pdfUrl) {
+      return pdfBlob;
+    }
+
     setStep('uploading');
     const token = await authService.getValidAccessToken();
     const folderId = activeBusiness?.id;
     if (!folderId) throw new Error('No active business folder');
 
-    // Reuse existing pdfUrl to skip re-upload
-    if (invoice.pdfUrl) {
-      return { pdfBlob, driveUrl: invoice.pdfUrl };
-    }
-
     const driveUrl = await uploadInvoicePDF(token, invoice.id, pdfBlob, folderId);
     updateInvoice(invoice.id, { pdfUrl: driveUrl });
-    return { pdfBlob, driveUrl };
+    return pdfBlob;
   }
 
   async function handleSendEmail() {
@@ -86,7 +91,7 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
     }
     setErrorMsg('');
     try {
-      const { pdfBlob } = await getPDFAndDriveUrl();
+      const pdfBlob = await preparePdf();
       setStep('sending');
       const token = await authService.getValidAccessToken();
       await sendInvoiceEmail({
@@ -118,12 +123,11 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
   async function handleShareWhatsApp() {
     setErrorMsg('');
     try {
-      const { pdfBlob, driveUrl } = await getPDFAndDriveUrl();
+      const pdfBlob = await preparePdf();
       setStep('sending');
       await shareInvoice({
         invoice,
         clientPhone: phone,
-        driveUrl,
         pdfBlob,
         businessName: businessSettings.name,
         businessType: businessSettings.type,

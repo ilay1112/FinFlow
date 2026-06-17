@@ -1,5 +1,6 @@
 import type { Expense, Client, Invoice, BusinessSettings, BookingAgent } from '../context/FinanceContext';
 import { normalizeAppState } from '../utils/appStateSchema';
+import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 
 const ROOT_FOLDER_NAME = 'FinFlow Data';
 const APP_DATA_FILENAME = 'app_data.json';
@@ -35,19 +36,9 @@ const DEFAULT_STATE: AppState = {
   expenses: [],
   clients: [],
   invoices: [],
-  categories: ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'],
+  categories: [...DEFAULT_CATEGORIES],
   bookingAgents: [],
-  businessSettings: {
-    name: '',
-    idNumber: '',
-    address: '',
-    phone: '',
-    email: '',
-    type: 'EsekPatur',
-    vatReportingPeriod: 'bimonthly',
-    vatCashBasis: false,
-    isDetailedFiler: false
-  }
+  businessSettings: { ...DEFAULT_BUSINESS_SETTINGS },
 };
 
 /**
@@ -198,6 +189,28 @@ export async function fetchAppState(token: string, fileId: string): Promise<AppS
   // __proto__/constructor) before any of it reaches the app's sinks or math.
   const raw = await response.json().catch(() => ({}));
   return normalizeAppState(raw);
+}
+
+/**
+ * F-1 follow-up — downloads an arbitrary Drive file's raw bytes as a Blob using an
+ * authenticated `alt=media` request. Receipts are owner-private (no public-read
+ * permission), so the browser's cookie-auth `drive.google.com` preview fails when the
+ * default Google account differs from the FinFlow account. Fetching with the FinFlow
+ * access token sidesteps that and works for both image and PDF receipts; the caller
+ * renders the resulting Blob via an object URL. The Blob carries Drive's reported
+ * Content-Type so the consumer can branch on image/PDF.
+ */
+export async function downloadDriveFileBlob(token: string, fileId: string): Promise<Blob> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Failed to download Drive file');
+  return response.blob();
+}
+
+/** Extracts the Drive file id from a `webViewLink` (e.g. `.../file/d/<id>/view`). */
+export function extractDriveFileId(webViewLink: string): string | null {
+  return webViewLink.match(/\/d\/([^/]+)/)?.[1] ?? null;
 }
 
 /**

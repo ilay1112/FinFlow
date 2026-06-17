@@ -161,3 +161,307 @@ These are advisory until the native project is available; re-audit once `android
 3. **F-7** (validate `app_data.json`) — hardens F-2/F-4/F-6 at the source.
 4. **F-6** (Drive `q` escaping), **F-5** (token handling), dependency `npm audit fix`.
 5. **F-8/F-9/F-10** — hardening.
+
+---
+
+## Fix Verification (2026-06-17)
+
+Re-verified the fixes implemented in commit `dc84820` ("security: harden auth, Drive/Gmail
+integration and local cache") against the findings above. Verdict per finding, with the
+code evidence that closes it (or what remains). Line numbers are the current `main` tree.
+
+| Finding | Severity | Verdict |
+|---|---|---|
+| F-1 Public-read receipts/PDFs | High | **CLOSED** |
+| F-2 Email header injection | High | **CLOSED** |
+| F-3 Logout/account-switch cache wipe | Medium | **CLOSED** |
+| F-4 Unescaped HTML email body | Medium | **CLOSED** |
+| F-5 Tokens in `localStorage` | Medium | **OPEN** (unchanged — architectural) |
+| F-6 Drive `q` injection | Medium | **CLOSED** |
+| F-7 `app_data.json` trusted blindly | Medium | **CLOSED** |
+| F-8 `window.open` no `noopener` | Low | **CLOSED** (bonus) |
+| F-9 OAuth scope breadth | Low/Info | **OPEN** (unchanged — design decision) |
+| F-10 Verbose logging | Info | **OPEN** (unchanged) |
+
+### F-1 — CLOSED
+`setPublicPermission` is **deleted entirely** (`git grep` for `type: 'anyone'` /
+`setPublicPermission` returns nothing in `src/`). `uploadInvoicePDF` and
+`uploadReceiptToDrive` no longer call it (`googleDrive.ts:373`, `:412-416`). The email path
+no longer embeds a public link — the body now says "The invoice PDF is attached"
+(`gmail.ts`), and `driveUrl` was removed from `SendInvoiceEmailParams` and from the modal
+call (`SendInvoiceModal.tsx:89-103`). The WhatsApp path now shares the **actual PDF file**
+(native share sheet / Web Share API / local download fallback) instead of a Drive link
+(`share.ts:117-169`), and the link line was removed from the message body (`share.ts:69-75`).
+Uploaded files are now owner-private. **Exposure vector eliminated.**
+
+### F-2 — CLOSED
+Defense in depth on three layers:
+1. UI boundary: `SendInvoiceModal.handleSendEmail` validates with `isValidEmailAddress`
+   before doing any work (`SendInvoiceModal.tsx:78-86`).
+2. Service boundary: `sendInvoiceEmail` re-validates and throws `INVALID_RECIPIENT`
+   (`gmail.ts:202-205`), so the guard holds even if the call path changes.
+3. Header sink: `buildMimeMessage` wraps the `To:` value in `sanitizeHeaderValue`, which
+   strips CR/LF and all control chars (`gmail.ts` `To:` line).
+`isValidEmailAddress` rejects CR/LF, control chars, commas/semicolons/whitespace, and
+anything that isn't a single `local@domain.tld` (`gmail.ts`). Verified against the
+canonical payload `victim@example.com\r\nBcc: attacker@evil.com` — rejected. The `Subject`
+was already RFC-2047 encoded. **A tampered client record (F-7 path) can no longer smuggle a
+Bcc.**
+
+### F-3 — CLOSED
+- Central key list + `clearFinanceCache()` in new `src/utils/financeCache.ts` (single source
+  of truth — producer and wipers can't drift).
+- Logout calls `clearFinanceCache()` (`AuthContext.tsx:170-173`) AND `FinanceContext` runs a
+  flush-then-wipe effect on the auth `true->false` transition: it best-effort saves unsynced
+  edits to Drive, then clears the cache and resets all in-memory state to defaults
+  (`FinanceContext.tsx:464-507`). This also closes the previously-noted data-loss risk of a
+  logout inside the 1s save debounce.
+- Account-switch: `login` reads the *previous* `auth_user` email **before** it is overwritten
+  (read at `AuthContext.tsx:82-83`, overwrite at `:99`) and purges the cache if the new email
+  differs, with a fail-safe `clearFinanceCache()` in the catch (`:85-92`). Hydrate-from-cache
+  therefore can't surface the prior user's data.
+- **Minor residual (Low):** the account-switch guard relies on `result.profile.email`. If the
+  plugin returns a token without a profile (fallback path, `AuthContext.tsx:103-106`),
+  `newEmail` is undefined and the switch guard does not fire. The explicit-logout wipe still
+  covers the normal sign-out-then-sign-in flow, so this is a narrow edge, not a reopening of
+  F-3. Optional hardening: clear the cache whenever `previousEmail` exists and `newEmail`
+  can't be confirmed.
+
+### F-4 — CLOSED
+`escapeHtml` (`& < > " '`) is applied to every dynamic value in `buildHtmlBody`:
+`item.description`, `businessName`, `invoiceId`, `date`, `dueDate`, and `total`
+(`gmail.ts:128-186`). The `driveUrl` `href` — the worst sink, allowing attribute breakout —
+was **removed entirely** (now static "attached" text), so there's no untrusted URL in an
+`href` anymore. `formatILS`/numeric fields are app-generated. No remaining raw interpolation
+of untrusted strings into the HTML body.
+
+### F-5 — OPEN (unchanged, architectural)
+Access tokens (Drive + `gmail.send`) are still written to and read from `localStorage`
+(`AuthContext.tsx:113-114`; `auth.ts`). This commit did not attempt the in-memory-token
+refactor or native secure storage; it remains the documented no-backend tradeoff (see Out of
+Scope). Blast radius is now **reduced** because the primary XSS sink that fed it (F-4 HTML
+body) is closed, but the finding itself is not addressed. Still recommended for `alex`/arch
+decision: keep the access token in memory + silent refresh on web; use Capacitor secure
+storage / Keystore on native.
+
+### F-6 — CLOSED
+`escapeDriveQueryValue` escapes backslash then single-quote and strips control chars
+(`googleDrive.ts:53-69`), and `findFileId` routes the name through it
+(`googleDrive.ts` `q` construction). All name-based lookups (`listBusinesses`,
+`createBusiness`, receipt/invoice folder resolution) go through `findFileId`, so they inherit
+the escaping. Verified `O'Brien` and `' or '1'='1` are neutralized into a quoted literal.
+
+### F-7 — CLOSED
+New `src/utils/appStateSchema.ts` `normalizeAppState()`:
+- `stripDangerousKeys` recursively removes `__proto__`/`constructor`/`prototype`
+  (prototype-pollution guard) before any field is touched.
+- Per-record normalizers coerce types, drop records missing an `id`, whitelist all enum
+  fields (business/document/payment/VAT/status), and clamp amounts to finite, non-negative
+  numbers (no NaN/Infinity/negative totals reaching the math).
+Applied at **both** untrusted entry points: Drive load (`fetchAppState`,
+`googleDrive.ts:199-200`, with a `.catch(() => ({}))` so malformed JSON degrades to defaults)
+and the localStorage cache hydrate (`FinanceContext.tsx:300`). `mergeAppState` consumes the
+already-normalized remote state, so the merge path is covered too. This hardens F-2/F-4/F-6
+at the source as intended.
+- **Legacy-data check:** normalization is *lenient* (defaults missing fields, keeps records
+  with valid `id`), so legitimate older `app_data.json` is preserved rather than rejected —
+  no false-positive data loss. The one behavioral change to note: a `paymentLine` with
+  `amount <= 0` is dropped (`appStateSchema.ts` `normalizePaymentLine`), and an expense/
+  client/invoice/agent with no `id` is dropped — acceptable, as such records are unusable,
+  but worth flagging if any legacy export relied on id-less rows.
+
+### F-8 — CLOSED (bonus, not in original remediation scope of the commit)
+All `window.open` calls for `wa.me` now pass `'noopener,noreferrer'` (`share.ts:164,167`).
+
+### F-9 / F-10 — OPEN (unchanged)
+Scope breadth (`drive.file` + `gmail.send` at login) and verbose console logging were not
+touched by this commit. Both remain Low/Info hardening items as originally rated.
+
+### New issues / regressions introduced by the fix — none material
+- **Email regex (over-rejection check):** tested against real-world addresses — plus-tags
+  (`user+tag@gmail.com`), subdomains, multi-label TLDs (`a@sub.example.co.il`), hyphenated
+  domains, and unicode local parts (`José@example.com`) all **pass**; injection/multiples
+  **fail**. The only rejections are `name@localhost` (no dotted TLD) and quoted local parts —
+  not relevant for client invoice emails. No over-aggressive regression.
+- **Schema bypass check:** entry points covered (Drive + cache + merge); no path feeds raw
+  remote JSON downstream. Prototype-pollution payloads are stripped recursively. No bypass
+  found.
+- **Cache-purge coverage check:** `FINANCE_CACHE_KEYS` covers every key the persistence
+  effect writes (`FinanceContext.tsx:415-...`), incl. `finance_active_business`. No missed
+  key. (Note: `finance_categories` is in the wipe list and is written by the persistence
+  effect — consistent.)
+- **Share path (new code) note (Low):** `share.ts` writes the PDF to `Directory.Cache` with
+  `path = invoice_${invoice.id}.pdf`. `invoice.id` is app-generated (sequence/uuid), so path
+  traversal via the filename is not a practical concern, but if invoice IDs ever become
+  user-settable, sanitize the filename. The local-download fallback (`share.ts:150-159`) is
+  standard and revokes the object URL. No new exposure.
+
+### Dependency check (2026-06-17, live)
+- **New deps added by this commit:** `@capacitor/share@8.0.1` and
+  `@capacitor/filesystem@8.1.2`. Both are the latest published versions
+  (`npm view`: share modified 2026-06-16, filesystem 2026-05-05) and both have **zero**
+  GitHub security advisories (queried the GitHub Advisory REST API
+  `api.github.com/advisories?ecosystem=npm&affects=<pkg>` — returned empty for both).
+  Transitive `@capacitor/synapse@1.0.4` — no advisories. **Clean.**
+- **Pre-existing `npm audit` (unchanged by this commit):** still **3 vulns (1 high, 2
+  moderate)** — `vite` (High, dev-server only, Windows), `dompurify` (Moderate, transitive;
+  the app's F-4 fix uses a hand-rolled escaper, *not* DOMPurify, so this is not in the runtime
+  path), `tar` (Moderate, tooling). None in the production request path. `npm audit fix` is
+  still outstanding and recommended before release.
+  - Advisory refs: DOMPurify `<=3.4.8` (GHSA-x4vx-rjvf-j5p4 et al.); node-tar `<=7.5.15`
+    (GHSA-vmf3-w455-68vh); Vite `8.0.0–8.0.15` (GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3).
+
+### Remaining HIGH/CRITICAL exposure on the core surface
+After this commit there is **no remaining High or Critical** finding that is exploitable as
+originally described:
+- The two Highs (F-1 public links, F-2 header injection) are **closed**.
+- Remaining items are Medium-or-lower and either architectural (F-5 token storage, the
+  no-backend trust model) or hardening (F-9 scope, F-10 logging). F-5 is the highest residual
+  and is gated on the backend/secure-native-storage architecture decision in Out of Scope.
+
+**Updated overall risk verdict: Medium** (was High). The exploitable PII-exposure and
+exfiltration paths are remediated; residual risk is dominated by client-side token storage
+inherent to the no-backend design.
+
+---
+
+## Residual-Fix Verification (2026-06-17)
+
+Verified Alex's **uncommitted** working-tree changes against baseline `3ec3f43`
+(`git diff 3ec3f43 -- src/`; new file `src/config/defaults.ts`). These close the three
+residuals flagged in the Fix-Verification pass above. Line numbers are the current tree.
+
+| Residual | Prior state | Verdict |
+|---|---|---|
+| R1 — Attachment filename header injection (F-2 follow-up) | PARTIAL (filename used raw id) | **CLOSED** |
+| R2 — Account-switch cache purge fail-safe (F-3 follow-up) | PARTIAL (skip on missing email) | **CLOSED** |
+| R3 — Authenticated receipt preview (F-1 follow-up) | OPEN (cookie-auth iframe, broke for owner-private files) | **CLOSED** |
+
+### R1 — Attachment filename header injection — CLOSED
+Two-layer defense, sink + source:
+- **Sink:** `buildMimeMessage` now runs the filename through `sanitizeQuotedHeaderParam`
+  (`gmail.ts:102`), which composes `sanitizeHeaderValue` (strips CR/LF + `\x00-\x1f\x7f`,
+  `gmail.ts:42-45`) with a `"` strip (`gmail.ts:54-56`). The sanitized `filename` is what
+  lands in both `Content-Type: ...; name="${filename}"` and
+  `Content-Disposition: attachment; filename="${filename}"` (`gmail.ts:120-121`). A tampered
+  id can no longer close the quoted-string (`"` removed) nor start a new header (CR/LF
+  removed). The `To:` value is likewise wrapped in `sanitizeHeaderValue` (`gmail.ts:110`),
+  and `Subject` stays RFC-2047 base64-encoded (`gmail.ts:103`), so every header line is
+  neutralized.
+- **Source:** `normalizeInvoice` now coerces the id via `toSafeId`
+  (`appStateSchema.ts:201-204`), which strips `[\r\n\x00-\x1f\x7f"]` from any id read out of
+  the untrusted `app_data.json` (`appStateSchema.ts:90-93`). So the value is safe before it
+  ever reaches the sink.
+- **No remaining raw-id path into headers:** `params.invoiceId` is the only id that flows
+  into `buildMimeMessage`; it originates from `invoice.id` (normalized) via
+  `SendInvoiceModal` -> `sendInvoiceEmail` -> `buildMimeMessage`. The id also reaches the
+  HTML body (`Invoice ${escapeHtml(params.invoiceId)}`, `gmail.ts:161`) where it is
+  HTML-escaped. Confirmed against payloads `INV"\r\nBcc: a@b.co` and
+  `1"; name="x.html` — both reduced to inert characters at the sink, and stripped at the
+  source. **Closed.**
+
+### R2 — Account-switch cache purge fail-safe — CLOSED
+The guard is now inverted to keep-on-confirmed-same-account (`AuthContext.tsx:90-95`):
+```
+if (previousEmail) {
+  const sameConfirmedAccount = !!newEmail && newEmail === previousEmail;
+  if (!sameConfirmedAccount) clearFinanceCache();
+}
+```
+The prior `finance_*` cache is now wiped in every case where a previously-cached account
+exists EXCEPT a confirmed same-account login (new profile email present AND byte-equal). The
+specific gap noted before — a silent/native re-auth that returns no/empty `profile.email`
+leaves `newEmail` undefined — now triggers the purge (`!!newEmail` is false ->
+`sameConfirmedAccount` false -> clear). The `catch` still fail-safe-clears on any parse error
+(`AuthContext.tsx:96-100`). `previousEmail` is read **before** `auth_user` is overwritten
+(read `:87-88`, overwrite `:107`), so the comparison uses the genuine prior identity.
+- **Over-purge check (new-issue probe):** on a *first-ever* login `previousEmail` is
+  undefined, so the outer `if` is skipped and nothing is cleared — no spurious wipe of a
+  fresh session. On a confirmed same-account re-login the cache is correctly retained.
+  The only "extra" purges versus the old logic are exactly the unconfirmable cases, which is
+  the intended fail-safe — purging a cache that may belong to a different user is the correct,
+  data-loss-free choice (the cache is a non-authoritative mirror of Drive and is re-hydrated
+  from Drive after login). No legitimate-data-loss regression. **Closed, no new issue.**
+
+### R3 — Authenticated receipt preview — CLOSED
+The cookie-auth `drive.google.com/file/d/<id>/preview` iframe and the public "Open
+Directly"/`webViewLink` links are **removed** from `ExpensesView` (the `ExternalLink` import
+and both link buttons are gone in the diff). Replacement flow:
+- `extractDriveFileId(receiptUrl)` -> `downloadDriveFileBlob(token, fileId)` fetches the raw
+  bytes with `Authorization: Bearer <token>` against the hardcoded
+  `www.googleapis.com/drive/v3/files/<id>?alt=media` endpoint (`googleDrive.ts:203-209`). No
+  cookie auth, no reliance on a public link — works for owner-private files. PDF vs image is
+  branched on `blob.type === 'application/pdf'` (`ExpensesView.tsx:118`): PDF -> same-origin
+  `<iframe src={objectUrl}>`, image -> `<img src={objectUrl}>`.
+- **Object-URL lifecycle:** the effect creates the object URL and its cleanup runs
+  `URL.revokeObjectURL(objectUrl)` on dependency change/unmount, guarded by a `cancelled`
+  flag so an in-flight fetch that resolves after close doesn't leak a URL
+  (`ExpensesView.tsx:121-134`). The download button now points at the in-memory
+  `receiptPreview.url` (the object URL), not the public Drive link, and is only rendered when
+  `receiptPreview` exists. On `fileId === null` or fetch failure it shows the error state and
+  sets no preview. No blob-URL leak path found.
+- **SSRF / wrong-file probe (new-issue check):** `receiptUrl` is attacker-influencable (it
+  comes from `app_data.json`, only `toOptionalStr`-typed, `appStateSchema.ts:158`). The host
+  is hardcoded, so no arbitrary-host SSRF is possible — `fileId` is only a path segment.
+  Residual nuance: `extractDriveFileId`'s `([^/]+)` capture permits `?`/`#`/`..`, so a
+  tampered `receiptUrl` could in principle append query params or a path segment to the Drive
+  call. Impact is bounded to the FinFlow user's **own** `drive.file`-scoped files (the
+  attacker can at most make the user fetch a different app-created file of their own, or a
+  malformed request that 404s) — no cross-account read, no external host, no token leak. This
+  is a **Low** hardening note, not an exploitable finding: prefer encoding the id
+  (`encodeURIComponent`) and/or constraining the capture to Drive's id charset
+  (`[A-Za-z0-9_-]+`). Same applies to the legacy `deleteExpense` extraction
+  (`FinanceContext.tsx:514`). **Closed; one Low hardening note for `alex`.**
+
+### New-issue sweep — none material
+- **`defaults.ts` (new shared module):** `DEFAULT_BUSINESS_SETTINGS` / `DEFAULT_CATEGORIES`
+  are byte-identical to the three former inline copies (FinanceContext, googleDrive
+  `DEFAULT_STATE`, appStateSchema). Consumers spread/copy them (`[...DEFAULT_CATEGORIES]`,
+  `{ ...DEFAULT_BUSINESS_SETTINGS }`) at each use, so the shared mutable arrays/objects are
+  not aliased into live state — no shared-reference mutation hazard. `type: 'EsekPatur'`,
+  `vatCashBasis: false`, `isDetailedFiler: false` defaults are unchanged. **No
+  security-relevant default changed.** Pure de-duplication; reduces drift risk (a security
+  positive for the F-7 normalizer).
+- **`preparePdf` refactor (`SendInvoiceModal.tsx`):** renamed from `getPDFAndDriveUrl`; now
+  returns only the blob and no longer surfaces a `driveUrl` to either sender. The
+  archive-upload (`uploadInvoicePDF`) still runs for the `pdfUrl` "already-issued" signal, but
+  the upload no longer sets public-read (F-1) and the URL is no longer placed in the
+  email/WhatsApp message — consistent with F-1 CLOSED. `driveUrl` removed from
+  `ShareInvoiceParams` (`share.ts`) and from the modal's `shareInvoice` call. No regression;
+  removes a residual exposure path rather than adding one.
+- **Token handling in the new preview path:** uses `authService.getValidAccessToken()`
+  (silent-refresh path) per open; token is only sent as a Bearer header to the hardcoded
+  Google host, never logged, never placed in the object URL or DOM. No new token exposure.
+
+### Dependency re-confirmation (2026-06-17, live)
+- **`npm audit` now reports `found 0 vulnerabilities`** (was 1 High + 2 Moderate). Confirmed
+  the working tree resolves all three prior advisories via transitive lockfile bumps —
+  `package.json` is **unchanged** (no new direct deps were added by this fix):
+  - `vite@8.0.16` (was in the vulnerable `8.0.0–8.0.15` range) — GHSA-fx2h-pf6j-xcff /
+    GHSA-v6wh-96g9-6wx3 fixed.
+  - `dompurify@3.4.10` (>3.4.8, transitive via `jspdf`) — GHSA-x4vx-rjvf-j5p4 fixed. (App
+    still uses its own `escapeHtml`, not DOMPurify, so this was never in the runtime path.)
+  - `tar@7.5.16` (>7.5.15, transitive via `@capacitor/cli`) — GHSA-vmf3-w455-68vh fixed.
+- **Spot-check of bumped/co-bumped packages:** the lock also moved Vite's rolldown/oxc and
+  emnapi build-time binaries by patch/minor (e.g. `@rolldown/binding-*` 1.0.2->1.0.3,
+  `@oxc-project/types` 0.132->0.133). These are dev/build-only native binaries pulled by the
+  Vite 8.0.16 toolchain; none are app-runtime deps and none carry advisories. Nothing risky
+  was introduced.
+- **Capacitor share/filesystem (added in the earlier commit) re-confirmed present and clean:**
+  `@capacitor/share@8.0.1`, `@capacitor/filesystem@8.1.2` — no advisories.
+
+### Residual verdict
+- **R1, R2, R3: CLOSED.** All three follow-up gaps are remediated with verified code, at both
+  source and sink where applicable.
+- **New findings:** one **Low** hardening note only — the Drive `fileId` extraction
+  (`extractDriveFileId`, `FinanceContext.tsx:514`) accepts `?`/`#`/`..` in the captured id;
+  encode the id and/or constrain the capture to `[A-Za-z0-9_-]+`. Bounded by `drive.file`
+  scope; not exploitable for SSRF or cross-account access. Hand to `alex` as a tidy-up.
+- **No regressions** introduced by the fix; `defaults.ts` changes no security-relevant
+  default; the account-switch guard does not over-purge legitimate same-account sessions.
+
+**Overall residual risk: Low–Medium** (improved from Medium). No High/Critical remains; the
+exploitable PII/exfiltration and the three follow-up gaps are closed and dependencies are at
+`0 vulnerabilities`. Residual risk is now dominated by the unchanged, architectural items —
+F-5 (access token in `localStorage`, no-backend constraint) and the F-9/F-10 hardening
+backlog — plus the single Low Drive-id-encoding nit above.

@@ -78,12 +78,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // the one previously cached on this device, purge the prior user's finance_*
         // cache before any data is hydrated, so the new session can never momentarily
         // read the previous user's financial records.
+        //
+        // Fail-safe: when there IS a previously-cached account, the only case where we
+        // keep its cache is a CONFIRMED same-account login (new email present AND equal).
+        // A silent/native re-auth that returns no/empty profile email is unconfirmable,
+        // so we must assume a switch and purge — never leave the prior user's PII behind.
         try {
           const previousRaw = localStorage.getItem('auth_user');
           const previousEmail = previousRaw ? (JSON.parse(previousRaw)?.email as string | undefined) : undefined;
           const newEmail = result.profile?.email;
-          if (previousEmail && newEmail && previousEmail !== newEmail) {
-            clearFinanceCache();
+          if (previousEmail) {
+            const sameConfirmedAccount = !!newEmail && newEmail === previousEmail;
+            if (!sameConfirmedAccount) {
+              clearFinanceCache();
+            }
           }
         } catch (e) {
           // If we can't determine the previous account, fail safe and clear the cache.

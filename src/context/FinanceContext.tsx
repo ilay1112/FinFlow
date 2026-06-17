@@ -10,6 +10,7 @@ import {
   validatePayments,
 } from '../utils/invoiceMath';
 import { getCashLimit } from '../config/taxConfig';
+import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 import { normalizeAppState } from '../utils/appStateSchema';
 import { clearFinanceCache } from '../utils/financeCache';
 
@@ -229,20 +230,6 @@ interface FinanceContextType {
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
-
-const DEFAULT_CATEGORIES = ['Software', 'Rent', 'Supplies', 'Marketing', 'Utilities', 'Travel', 'Other'];
-
-const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
-  name: '',
-  idNumber: '',
-  address: '',
-  phone: '',
-  email: '',
-  type: 'EsekPatur',
-  vatReportingPeriod: 'bimonthly',
-  vatCashBasis: false,
-  isDetailedFiler: false
-};
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { accessToken, isAuthenticated } = useAuth();
