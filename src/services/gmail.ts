@@ -10,9 +10,53 @@ export interface SendInvoiceEmailParams {
   dueDate: string;
   date: string;
   pdfBlob: Blob;
-  driveUrl: string;
   businessName: string;
   accessToken: string;
+}
+
+/**
+ * F-2 — Single-address email validation used at the send boundary. Rejects anything
+ * with CR/LF/control characters (header-injection vector) and anything that isn't a
+ * single, well-formed address. Deliberately conservative: one local@domain, no commas,
+ * no display names, no whitespace. This is the trust gate before the recipient is
+ * placed into a raw RFC-2822 `To:` header.
+ */
+export function isValidEmailAddress(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 254) return false;
+  // No control chars (incl. CR/LF) anywhere.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(trimmed)) return false;
+  // Exactly one address: no commas/semicolons/whitespace separating multiples.
+  if (/[,;\s]/.test(trimmed)) return false;
+  // Single local@domain with a dotted TLD; no quotes/angle brackets/display name.
+  return /^[^@<>"'()[\]\\,;:\s]+@[^@<>"'()[\]\\,;:\s]+\.[^@<>"'()[\]\\,;:\s]+$/.test(trimmed);
+}
+
+/**
+ * F-2 — Defense-in-depth: strip CR/LF (and other control chars) from any value placed
+ * into a single MIME header line, so a tampered value can never start a new header
+ * (e.g. inject `Bcc:`). Applied to every interpolated header value in buildMimeMessage.
+ */
+function sanitizeHeaderValue(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\r\n\x00-\x1f\x7f]/g, '');
+}
+
+/**
+ * F-4 — HTML-escapes a dynamic value before it is interpolated into the hand-built
+ * `text/html` email body. The in-app/PDF path is safe (React escapes JSX); this is the
+ * only place untrusted strings reach raw HTML, so every dynamic value must pass through
+ * here to prevent markup/link injection into recipients' inboxes.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function uint8ToBase64(bytes: Uint8Array): string {
@@ -50,7 +94,7 @@ async function buildMimeMessage(params: {
 
   const mime = [
     `MIME-Version: 1.0`,
-    `To: ${params.to}`,
+    `To: ${sanitizeHeaderValue(params.to)}`,
     `Subject: ${encodedSubject}`,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     ``,
@@ -84,7 +128,7 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
     const lineTotal = item.quantity * item.unitPrice;
     return `
       <tr>
-        <td style="padding:10px 14px;border:1px solid #e2e8f0;">${item.description}</td>
+        <td style="padding:10px 14px;border:1px solid #e2e8f0;">${escapeHtml(item.description)}</td>
         <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:center;">${item.quantity}</td>
         <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;">${formatILS(item.unitPrice)}</td>
         <td style="padding:10px 14px;border:1px solid #e2e8f0;text-align:right;font-weight:600;">${formatILS(lineTotal)}</td>
@@ -100,8 +144,8 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
   return `
     <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
       <div style="background:#2563eb;padding:24px 28px;border-radius:8px 8px 0 0;">
-        <h2 style="margin:0;color:#fff;font-size:20px;">${params.businessName}</h2>
-        <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px;">Invoice ${params.invoiceId}</p>
+        <h2 style="margin:0;color:#fff;font-size:20px;">${escapeHtml(params.businessName)}</h2>
+        <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px;">Invoice ${escapeHtml(params.invoiceId)}</p>
       </div>
 
       <div style="background:#fff;padding:24px 28px;border:1px solid #e2e8f0;border-top:none;">
@@ -111,8 +155,8 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
             <td style="color:#64748b;font-size:13px;">Due Date</td>
           </tr>
           <tr>
-            <td style="font-weight:600;font-size:15px;">${params.date}</td>
-            <td style="font-weight:600;font-size:15px;">${params.dueDate}</td>
+            <td style="font-weight:600;font-size:15px;">${escapeHtml(params.date)}</td>
+            <td style="font-weight:600;font-size:15px;">${escapeHtml(params.dueDate)}</td>
           </tr>
         </table>
 
@@ -138,12 +182,12 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
           ${taxRow}
           <tr style="background:#eff6ff;">
             <td colspan="3" style="padding:12px 14px;border:1px solid #e2e8f0;text-align:right;font-weight:700;font-size:16px;">Total</td>
-            <td style="padding:12px 14px;border:1px solid #e2e8f0;text-align:right;font-weight:700;font-size:18px;color:#2563eb;">${params.total}</td>
+            <td style="padding:12px 14px;border:1px solid #e2e8f0;text-align:right;font-weight:700;font-size:18px;color:#2563eb;">${escapeHtml(params.total)}</td>
           </tr>
         </table>
 
-        <p style="margin-top:24px;">
-          <a href="${params.driveUrl}" style="color:#2563eb;font-weight:600;">View Invoice PDF online</a>
+        <p style="margin-top:24px;color:#64748b;font-size:13px;">
+          The invoice PDF is attached to this email.
         </p>
       </div>
 
@@ -155,6 +199,13 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
 }
 
 export async function sendInvoiceEmail(params: SendInvoiceEmailParams): Promise<void> {
+  // F-2 — hard gate at the service boundary: never build a MIME message for a
+  // recipient that isn't a single, well-formed, CR/LF-free address. This backstops
+  // the UI-level validation in SendInvoiceModal even if the call path changes.
+  if (!isValidEmailAddress(params.to)) {
+    throw new Error('INVALID_RECIPIENT');
+  }
+
   const subject = `Invoice ${params.invoiceId} from ${params.businessName}`;
   const htmlBody = buildHtmlBody(params);
 

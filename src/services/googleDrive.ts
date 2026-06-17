@@ -1,4 +1,5 @@
 import type { Expense, Client, Invoice, BusinessSettings, BookingAgent } from '../context/FinanceContext';
+import { normalizeAppState } from '../utils/appStateSchema';
 
 const ROOT_FOLDER_NAME = 'FinFlow Data';
 const APP_DATA_FILENAME = 'app_data.json';
@@ -50,10 +51,27 @@ const DEFAULT_STATE: AppState = {
 };
 
 /**
+ * F-6 — Escapes a user-controlled value before it is interpolated into a Drive `q`
+ * string literal (`name = '...'`). Drive's query language uses single-quoted string
+ * literals with backslash escaping, so an unescaped quote in a business/vendor name
+ * (e.g. `O'Brien`, or a crafted `' or '1'='1`) would break or broaden the query.
+ * Backslashes are escaped first, then single quotes; control chars (incl. the CR/LF
+ * that could smuggle extra clauses) are stripped. Every `q` that embeds a name MUST
+ * route its value through this helper.
+ */
+export function escapeDriveQueryValue(value: string): string {
+  return value
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
+}
+
+/**
  * Searches for a file by name. Returns the file ID or null.
  */
 async function findFileId(token: string, name: string, isFolder: boolean = false, parentId: string = 'root'): Promise<string | null> {
-  const q = `name = '${name}' and trashed = false and '${parentId}' in parents${isFolder ? " and mimeType = 'application/vnd.google-apps.folder'" : ""}`;
+  const q = `name = '${escapeDriveQueryValue(name)}' and trashed = false and '${parentId}' in parents${isFolder ? " and mimeType = 'application/vnd.google-apps.folder'" : ""}`;
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -175,7 +193,11 @@ export async function fetchAppState(token: string, fileId: string): Promise<AppS
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) throw new Error('Failed to download app state');
-  return await response.json();
+  // F-7 — app_data.json is user-editable in Drive and therefore untrusted. Validate
+  // and normalize the parsed shape (drop malformed records, coerce types, strip
+  // __proto__/constructor) before any of it reaches the app's sinks or math.
+  const raw = await response.json().catch(() => ({}));
+  return normalizeAppState(raw);
 }
 
 /**
@@ -310,30 +332,22 @@ export async function deleteFile(token: string, fileId: string): Promise<void> {
 }
 
 /**
- * Sets the permission of a file to "anyone with the link" as a reader.
- * This prevents "You need access" errors when the user is logged into multiple Google accounts.
+ * F-1 — Uploaded invoice PDFs and receipts are NO LONGER made
+ * `anyone-with-the-link` readable. These files contain customer PII, tax IDs and
+ * financial figures; a permanent public link (distributed over email/WhatsApp) was a
+ * lasting unauthenticated-exposure vector. Files now stay private to the owner.
+ *
+ * - Email delivery already attaches the PDF, so it needs no public link.
+ * - WhatsApp delivery now shares the actual PDF file through the native share sheet
+ *   (see services/share.ts) instead of a public Drive link.
+ *
+ * The returned Drive `webViewLink` still works for the OWNER (e.g. opening their own
+ * archive); it just no longer grants access to anyone else.
  */
-async function setPublicPermission(token: string, fileId: string): Promise<void> {
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      role: 'reader',
-      type: 'anyone',
-    }),
-  });
-  
-  if (!response.ok) {
-    console.warn('Failed to set public permission on file:', fileId);
-  }
-}
 
 /**
  * Uploads a PDF blob to the "Invoices" folder inside the business folder.
- * Returns the shareable Drive URL.
+ * Returns the owner-only Drive URL (private; not publicly shareable).
  */
 export async function uploadInvoicePDF(token: string, invoiceId: string, pdfBlob: Blob, businessFolderId: string): Promise<string> {
   let invoicesFolderId = await findFileId(token, INVOICES_FOLDER_NAME, true, businessFolderId);
@@ -359,7 +373,6 @@ export async function uploadInvoicePDF(token: string, invoiceId: string, pdfBlob
   }
 
   const data: DriveFile = await response.json();
-  if (data.id) await setPublicPermission(token, data.id);
   return data.webViewLink || '';
 }
 
@@ -399,11 +412,8 @@ export async function uploadReceiptToDrive(token: string, file: File, metadata: 
   
   if (!response.ok) throw new Error('Failed to upload receipt');
   const data: DriveFile = await response.json();
-  
-  // Explicitly set public permission to avoid account switching errors
-  if (data.id) {
-    await setPublicPermission(token, data.id);
-  }
 
+  // F-1 — receipts stay private to the owner; no public permission is set. Receipts
+  // are never shared by link (only referenced in the owner's own expense records).
   return data.webViewLink || '';
 }

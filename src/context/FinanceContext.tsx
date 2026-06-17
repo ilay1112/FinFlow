@@ -10,6 +10,8 @@ import {
   validatePayments,
 } from '../utils/invoiceMath';
 import { getCashLimit } from '../config/taxConfig';
+import { normalizeAppState } from '../utils/appStateSchema';
+import { clearFinanceCache } from '../utils/financeCache';
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -266,24 +268,52 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // write the previous workspace's data into the new workspace's app_data.json.
   const loadedBusinessId = useRef<string | null>(null);
 
+  // F-3 — latest in-memory state and the token, mirrored into refs so the logout
+  // flush can persist the most recent edits to Drive BEFORE the finance cache is
+  // wiped, without re-running the flush effect on every keystroke.
+  const latestStateRef = useRef<googleDrive.AppState | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
+  // True once we have data worth flushing for the loaded workspace.
+  const hasPendingDataRef = useRef(false);
+
+  // Keep the flush refs in sync with the latest render's state/token (in an effect,
+  // not during render, so reads of these refs at logout always see the freshest data).
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+    latestStateRef.current = { expenses, categories, clients, invoices, bookingAgents, businessSettings };
+  });
+
   // Initial Load from LocalStorage (Fallback)
   useEffect(() => {
     const loadLocalData = () => {
       try {
-        const savedExpenses = localStorage.getItem('finance_expenses');
-        const savedCategories = localStorage.getItem('finance_categories');
-        const savedClients = localStorage.getItem('finance_clients');
-        const savedBookingAgents = localStorage.getItem('finance_booking_agents');
-        const savedInvoices = localStorage.getItem('finance_invoices');
-        const savedSettings = localStorage.getItem('finance_business_settings');
-        const savedActiveBusiness = localStorage.getItem('finance_active_business');
+        // F-7 — the localStorage cache mirrors the untrusted Drive app_data.json and
+        // can be edited via DevTools, so validate/normalize it through the same schema
+        // (drops malformed records, coerces types, strips __proto__/constructor)
+        // before it reaches state.
+        const parse = (key: string): unknown => {
+          const raw = localStorage.getItem(key);
+          if (!raw) return undefined;
+          try { return JSON.parse(raw); } catch { return undefined; }
+        };
 
-        if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
-        if (savedCategories) setCategories(JSON.parse(savedCategories));
-        if (savedClients) setClients(JSON.parse(savedClients));
-        if (savedBookingAgents) setBookingAgents(JSON.parse(savedBookingAgents));
-        if (savedInvoices) setInvoices(JSON.parse(savedInvoices));
-        if (savedSettings) setBusinessSettings(JSON.parse(savedSettings));
+        const cached = normalizeAppState({
+          expenses: parse('finance_expenses'),
+          categories: parse('finance_categories'),
+          clients: parse('finance_clients'),
+          bookingAgents: parse('finance_booking_agents'),
+          invoices: parse('finance_invoices'),
+          businessSettings: parse('finance_business_settings'),
+        });
+
+        if (localStorage.getItem('finance_expenses')) setExpenses(cached.expenses);
+        if (localStorage.getItem('finance_categories')) setCategories(cached.categories);
+        if (localStorage.getItem('finance_clients')) setClients(cached.clients);
+        if (localStorage.getItem('finance_booking_agents')) setBookingAgents(cached.bookingAgents || []);
+        if (localStorage.getItem('finance_invoices')) setInvoices(cached.invoices);
+        if (localStorage.getItem('finance_business_settings')) setBusinessSettings(cached.businessSettings);
+
+        const savedActiveBusiness = localStorage.getItem('finance_active_business');
         if (savedActiveBusiness) setActiveBusiness(JSON.parse(savedActiveBusiness));
       } catch (error) {
         console.error('Failed to load finance data from localStorage:', error);
@@ -381,6 +411,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // newly selected workspace's app_data.json (and localStorage cache).
     if (loadedBusinessId.current !== activeBusiness.id) return;
 
+    // F-3 — this workspace's data is now live in state; the logout flush may persist it.
+    hasPendingDataRef.current = true;
+
     // Always save to localStorage as backup
     try {
       localStorage.setItem('finance_expenses', JSON.stringify(expenses));
@@ -427,6 +460,50 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return () => clearTimeout(timer);
     }
   }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, isAuthenticated, accessToken, activeBusiness]);
+
+  // F-3 — On logout (auth flips true -> false), flush the latest in-memory state to
+  // Drive BEFORE wiping the local cache, so a logout within the 1s save debounce can't
+  // lose unsynced edits; then purge all finance_* keys and reset in-memory state so the
+  // next user on a shared device can't read the previous user's financial data.
+  const wasAuthenticatedRef = useRef(isAuthenticated);
+  useEffect(() => {
+    const wasAuthenticated = wasAuthenticatedRef.current;
+    wasAuthenticatedRef.current = isAuthenticated;
+
+    if (wasAuthenticated && !isAuthenticated) {
+      const flushAndClear = async () => {
+        const token = accessTokenRef.current;
+        const fileId = driveFileId.current;
+        const state = latestStateRef.current;
+        // Best-effort final save of unsynced changes (token is briefly still valid
+        // right after logout is requested). Never block the wipe on a failed save.
+        if (token && fileId && state && hasPendingDataRef.current) {
+          try {
+            await googleDrive.saveAppStateGuarded(token, fileId, driveVersion.current, state);
+          } catch (error) {
+            console.warn('Final pre-logout Drive flush failed; clearing local cache anyway.', error);
+          }
+        }
+
+        clearFinanceCache();
+        driveFileId.current = null;
+        driveVersion.current = null;
+        loadedBusinessId.current = null;
+        hasPendingDataRef.current = false;
+
+        setExpenses([]);
+        setCategories(DEFAULT_CATEGORIES);
+        setClients([]);
+        setBookingAgents([]);
+        setInvoices([]);
+        setBusinessSettings(DEFAULT_BUSINESS_SETTINGS);
+        setBusinesses([]);
+        setActiveBusiness(null);
+        setIsInitialized(false);
+      };
+      void flushAndClear();
+    }
+  }, [isAuthenticated]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
     const newExpense = { ...expense, id: expense.id || uuidv4() };

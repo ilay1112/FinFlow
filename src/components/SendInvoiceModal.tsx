@@ -5,7 +5,7 @@ import { useFinance, type Invoice } from '../context/FinanceContext';
 import { authService } from '../services/auth';
 import { generateInvoicePDFBlob, waitForTemplateReady } from '../services/pdf/invoice-service';
 import { uploadInvoicePDF } from '../services/googleDrive';
-import { sendInvoiceEmail } from '../services/gmail';
+import { sendInvoiceEmail, isValidEmailAddress } from '../services/gmail';
 import { shareInvoice } from '../services/share';
 import { InvoiceTemplate } from '../services/pdf/InvoiceTemplate';
 import { Modal } from './ui/Modal';
@@ -75,14 +75,22 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
   }
 
   async function handleSendEmail() {
-    if (!email.trim()) return;
+    const recipient = email.trim();
+    // F-2 — validate the recipient at the input boundary before doing any work:
+    // a single, well-formed, CR/LF-free address. Blocks email-header injection
+    // (e.g. a newline that would smuggle a Bcc: to exfiltrate the PDF).
+    if (!isValidEmailAddress(recipient)) {
+      setErrorMsg(t('invoices.invalid_email'));
+      setStep('error');
+      return;
+    }
     setErrorMsg('');
     try {
-      const { pdfBlob, driveUrl } = await getPDFAndDriveUrl();
+      const { pdfBlob } = await getPDFAndDriveUrl();
       setStep('sending');
       const token = await authService.getValidAccessToken();
       await sendInvoiceEmail({
-        to: email.trim(),
+        to: recipient,
         invoiceId: invoice.id,
         items: invoice.items,
         taxRate: invoice.taxRate,
@@ -90,7 +98,6 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
         date: invoice.date,
         dueDate: invoice.dueDate,
         pdfBlob,
-        driveUrl,
         businessName: businessSettings.name,
         accessToken: token,
       });
@@ -99,6 +106,8 @@ export function SendInvoiceModal({ invoice, onClose }: Props) {
     } catch (err: any) {
       if (err.message === 'SCOPE_DENIED') {
         setErrorMsg(t('invoices.scope_error'));
+      } else if (err.message === 'INVALID_RECIPIENT') {
+        setErrorMsg(t('invoices.invalid_email'));
       } else {
         setErrorMsg(err.message || t('invoices.send_error'));
       }

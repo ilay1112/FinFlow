@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/auth';
+import { clearFinanceCache } from '../utils/financeCache';
 
 interface UserProfile {
   name: string;
@@ -71,10 +72,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const result = await authService.loginWithGoogle();
-      
+
       if (result.accessToken) {
+        // F-3 — account-switch guard: if a DIFFERENT Google account is signing in than
+        // the one previously cached on this device, purge the prior user's finance_*
+        // cache before any data is hydrated, so the new session can never momentarily
+        // read the previous user's financial records.
+        try {
+          const previousRaw = localStorage.getItem('auth_user');
+          const previousEmail = previousRaw ? (JSON.parse(previousRaw)?.email as string | undefined) : undefined;
+          const newEmail = result.profile?.email;
+          if (previousEmail && newEmail && previousEmail !== newEmail) {
+            clearFinanceCache();
+          }
+        } catch (e) {
+          // If we can't determine the previous account, fail safe and clear the cache.
+          clearFinanceCache();
+          console.warn('Account-switch detection failed; cleared finance cache.', e);
+        }
+
         setAccessToken(result.accessToken);
-        
+
         if (result.profile) {
           setUser(result.profile);
           try {
@@ -149,6 +167,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (storageError) {
       console.warn('Could not remove auth data from localStorage', storageError);
     }
+    // F-3 — defense-in-depth: ensure cached financial data/PII is also gone on logout.
+    // FinanceContext performs a save-first flush on the same auth transition; this is a
+    // backstop so the finance_* keys are cleared even if that path doesn't run.
+    clearFinanceCache();
   };
 
   return (

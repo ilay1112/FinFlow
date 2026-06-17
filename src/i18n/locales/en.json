@@ -201,7 +201,8 @@
     "send_email_success": "Email sent successfully",
     "share_success": "Invoice shared",
     "scope_error": "Gmail permission not granted. Please sign out and sign in again to allow email access.",
-    "send_error": "Failed to send invoice. Please try again."
+    "send_error": "Failed to send invoice. Please try again.",
+    "invalid_email": "Please enter a single valid email address."
   },
   "clients": {
     "subtitle": "Manage your customer database and billing history.",
