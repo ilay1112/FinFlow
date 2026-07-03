@@ -4,7 +4,6 @@ import { Capacitor } from '@capacitor/core';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_IOS_CLIENT_ID = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID;
 
-let isInitializing = false;
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 
@@ -60,9 +59,9 @@ export const authService = {
    */
   async initialize() {
     if (isInitialized) return;
-    if (isInitializing) return initPromise;
+    // Reuse the in-flight promise so concurrent callers share ONE plugin init.
+    if (initPromise) return initPromise;
 
-    isInitializing = true;
     initPromise = (async () => {
       try {
         await SocialLogin.initialize({
@@ -72,23 +71,31 @@ export const authService = {
             mode: 'online',
           },
         });
-        console.log('SocialLogin initialized successfully');
         isInitialized = true;
-        
-        // On web, check if we can recover a session
-        if (!Capacitor.isNativePlatform()) {
-          const status = await SocialLogin.isLoggedIn({ provider: 'google' });
-          console.log('Initial login status:', status);
-        }
       } catch (error) {
+        // Clear the failed promise so the next caller retries cleanly instead of
+        // awaiting a poisoned rejection forever.
+        initPromise = null;
         console.error('SocialLogin initialization failed:', error);
         throw error;
-      } finally {
-        isInitializing = false;
       }
     })();
 
     return initPromise;
+  },
+
+  /**
+   * Drops the cached init state and re-runs plugin initialization. Recovery path for
+   * the Capacitor lazy web-plugin race: two concurrent FIRST calls to the plugin (e.g.
+   * initialize() from main.tsx racing an early refresh() from AuthContext restore)
+   * each construct their own SocialLoginWeb, and the cached instance can be the one
+   * that never received the client id — after which login() throws "Google Client ID
+   * not set". Re-initializing configures the instance the proxy actually cached.
+   */
+  async forceReinitialize() {
+    isInitialized = false;
+    initPromise = null;
+    return this.initialize();
   },
 
   /**
@@ -100,9 +107,9 @@ export const authService = {
       await this.initialize();
 
       const isNative = Capacitor.isNativePlatform();
-      
-      const response = await SocialLogin.login({
-        provider: 'google',
+
+      const loginOptions = {
+        provider: 'google' as const,
         options: {
           scopes: [
             'openid',
@@ -119,15 +126,30 @@ export const authService = {
             // Web-specific options
             // We remove autoSelectEnabled/filterByAuthorizedAccounts as they are Android-only
             // and might cause issues with the web library.
-            style: 'standard',
+            style: 'standard' as const,
           }),
         },
-      });
+      };
+
+      let response;
+      try {
+        response = await SocialLogin.login(loginOptions);
+      } catch (error) {
+        // Self-healing for the lazy web-plugin first-call race (see forceReinitialize):
+        // if the cached plugin instance reports it was never configured, re-initialize
+        // it and retry the login once.
+        if (String(error).includes('Client ID not set')) {
+          await this.forceReinitialize();
+          response = await SocialLogin.login(loginOptions);
+        } else {
+          throw error;
+        }
+      }
 
       if (response.provider === 'google' && response.result) {
         return this.handleResult(response.result);
       }
-      
+
       throw new Error('Google login failed or was cancelled');
     } catch (error) {
       console.error('Login Error:', error);
@@ -140,6 +162,9 @@ export const authService = {
    */
   async checkSession() {
     try {
+      // Serialize behind init (see getValidAccessToken) so this can never be the
+      // plugin's racing first call.
+      await this.initialize();
       const { isLoggedIn } = await SocialLogin.isLoggedIn({ provider: 'google' });
       return isLoggedIn;
     } catch (error) {
@@ -215,6 +240,13 @@ export const authService = {
 
     // Cached token is missing or near/at expiry — attempt a silent refresh.
     try {
+      // Serialize behind plugin init. Without this, an early refresh (AuthContext
+      // restore with an expired token) races initialize() as the plugin proxy's FIRST
+      // call; Capacitor's lazy web loader then constructs TWO SocialLoginWeb instances
+      // and can cache the unconfigured one — breaking every later login() with
+      // "Google Client ID not set".
+      await this.initialize();
+
       const refreshFn = (SocialLogin as unknown as SocialLoginWithRefresh).refresh;
       const refreshed = refreshFn ? await refreshFn({ provider: 'google' }) : undefined;
       const refreshedAccess = refreshed?.accessToken;

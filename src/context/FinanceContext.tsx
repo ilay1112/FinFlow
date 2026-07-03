@@ -381,13 +381,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setActiveBusiness(targetBusiness);
         } catch (error) {
           console.error('Failed to init businesses:', error);
-          setSyncError('Failed to load businesses.');
+          if (isAuthError(error)) {
+            // Dead token before any workspace loaded: surface the reconnect state
+            // (opens the sign-in modal) instead of a bare error.
+            markSessionExpired();
+          } else {
+            setSyncError('Failed to load businesses.');
+          }
           setIsLoading(false);
+          // With no cached workspace, syncFromDrive never runs, so nothing else flips
+          // isInitialized — without this a device with an expired session hangs on the
+          // full-screen loader forever and never sees the app or the reconnect modal.
+          setIsInitialized(true);
         }
       };
       initBusinesses();
     }
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated, accessToken, markSessionExpired]);
 
   // Single source of truth for persisting the loaded workspace's state to Drive. Used
   // by the debounced auto-save, the backoff retry, the load-time reconnect flush, and
