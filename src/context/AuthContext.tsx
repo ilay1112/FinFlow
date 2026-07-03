@@ -30,6 +30,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Proactive-renewal timing. Lead: renew ~3 min before `auth_expiry`, comfortably before
+// getValidAccessToken()'s 2-min fast-path headroom runs out, so an actively-working user
+// never hits a dead token mid-session. Floor: `auth_expiry` may already be near/past (or
+// absent/garbage — it's an untrusted localStorage guess), and a zero-delay retry chain
+// would spin hot. Ceiling: setTimeout treats delays above 2^31-1 ms as 0, so a corrupt
+// far-future expiry would otherwise fire immediately in a loop.
+const RENEW_LEAD_MS = 3 * 60_000;
+const RENEW_FLOOR_MS = 30_000;
+const RENEW_MAX_DELAY_MS = 0x7fffffff;
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -130,6 +140,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
+
+  // Proactive renewal while the app STAYS in the foreground. The listener above only
+  // fires on background→foreground transitions, so a user working continuously past
+  // `auth_expiry` would still hit a dead token mid-session. This timer renews shortly
+  // before expiry instead; a throttled/suspended background timer is acceptable because
+  // the foreground-resume path covers that case on return. All renewal logic stays in
+  // getValidAccessToken() (fast path / silent refresh / AuthExpiredError) — this effect
+  // only schedules it. Re-arms explicitly after each success because a refresh rewrites
+  // `auth_expiry` in localStorage without necessarily changing any React state.
+  useEffect(() => {
+    // No live session to keep alive: signed out, or already waiting on an interactive
+    // re-login (a successful login() re-enters via these deps and re-arms).
+    if (!accessToken || sessionExpired) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const arm = () => {
+      // Logout can clear the cache between fires — stop the chain rather than refresh
+      // a session that no longer exists.
+      if (cancelled || !localStorage.getItem('auth_token')) return;
+      const expiry = Number(localStorage.getItem('auth_expiry'));
+      const untilRenewal = Number.isFinite(expiry) ? expiry - RENEW_LEAD_MS - Date.now() : 0;
+      const delay = Math.min(Math.max(untilRenewal, RENEW_FLOOR_MS), RENEW_MAX_DELAY_MS);
+      timer = setTimeout(async () => {
+        try {
+          const validToken = await authService.getValidAccessToken();
+          if (cancelled) return;
+          setAccessToken(validToken);
+          arm();
+        } catch {
+          if (cancelled) return;
+          // Silent renewal is no longer possible; only an interactive sign-in can
+          // recover. Never keep treating the cached token as live (§5).
+          setSessionExpired(true);
+        }
+      }, delay);
+    };
+
+    arm();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [accessToken, sessionExpired]);
 
   const handleLogin = async () => {
     setIsLoading(true);

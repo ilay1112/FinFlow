@@ -64,6 +64,13 @@
     "sync_reconnect": "Reconnect to sync",
     "sync_reconnect_hint": "Your session expired. Changes are saved on this device — sign in again to back them up to Drive."
   },
+  "session": {
+    "expired_title": "Session Expired",
+    "expired_body": "Your Google sign-in has expired, so changes can't be backed up to Drive right now. Everything you do is saved on this device and will sync automatically after you sign in again.",
+    "expired_unsynced": "You have changes that haven't been synced yet — they will be uploaded to Drive as soon as you reconnect.",
+    "sign_in_google": "Sign in with Google",
+    "continue_offline": "Continue offline"
+  },
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Real-time overview of your business performance.",

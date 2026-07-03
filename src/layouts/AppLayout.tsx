@@ -27,6 +27,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { FloatingActionButton } from '../components/FloatingActionButton';
+import { SessionExpiredModal } from '../components/SessionExpiredModal';
 
 export function AppLayout() {
   const { t, i18n } = useTranslation();
@@ -38,7 +39,19 @@ export function AppLayout() {
   const [isCreateBusinessModalOpen, setIsCreateBusinessModalOpen] = useState(false);
   const [newBusinessName, setNewBusinessName] = useState('');
   const businessDropdownRef = useRef<HTMLDivElement>(null);
-  
+  // The session-expired prompt must not nag: a dismissal holds for the whole expiry
+  // episode, and only a NEW episode (sessionExpired edge) clears it. Openness is
+  // derived, so a successful re-login (sessionExpired → false) closes the modal with
+  // no extra wiring, and a session already expired at mount (failed restore on app
+  // open) prompts immediately.
+  const [sessionModalDismissed, setSessionModalDismissed] = useState(false);
+  const [prevSessionExpired, setPrevSessionExpired] = useState(sessionExpired);
+  if (prevSessionExpired !== sessionExpired) {
+    setPrevSessionExpired(sessionExpired);
+    setSessionModalDismissed(false);
+  }
+  const isSessionModalOpen = isAuthenticated && sessionExpired && !sessionModalDismissed;
+
   const isRtl = i18n.language === 'he';
 
   // Single derived sync status for the status pill, in priority order:
@@ -417,6 +430,17 @@ export function AppLayout() {
       </div>
 
       <FloatingActionButton isSidebarOpen={isSidebarOpen} onCloseSidebar={() => setIsSidebarOpen(false)} />
+
+      {/* Session-expired sign-in prompt. The Google popup demands a direct user
+          gesture (popup blockers), so login() can't be auto-launched — this modal puts
+          the gesture one click away the moment silent renewal fails. The amber header
+          pill remains as the fallback entry point after a dismissal. */}
+      <SessionExpiredModal
+        isOpen={isSessionModalOpen}
+        onClose={() => setSessionModalDismissed(true)}
+        onSignIn={login}
+        hasUnsyncedChanges={hasUnsyncedChanges}
+      />
 
       {/* Create Workspace Modal */}
       <Modal 

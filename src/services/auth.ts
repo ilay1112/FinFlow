@@ -8,6 +8,12 @@ let isInitializing = false;
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 
+// Monotonic logout generation. getValidAccessToken() captures it on entry; a silent
+// refresh that resolves after logout() bumped it is discarded instead of re-caching
+// auth keys — the late localStorage write is what used to leave a live bearer token
+// on disk after the logout wipe (shared-device hygiene, F-3).
+let logoutEpoch = 0;
+
 /**
  * Thrown when there is no usable access token and a silent refresh could not produce
  * one. Distinct from a network/quota failure so callers can react specifically — flip
@@ -173,6 +179,10 @@ export const authService = {
    * Universal Logout
    */
   async logout() {
+    // Bump FIRST (before any await) so a refresh already in flight — foreground-resume
+    // or the proactive pre-expiry timer — cannot re-write auth_token/auth_expiry after
+    // the logout wipe, even if the plugin call below fails.
+    logoutEpoch += 1;
     try {
       await SocialLogin.logout({ provider: 'google' });
     } catch (error) {
@@ -189,6 +199,9 @@ export const authService = {
    * trusting Drive writes.
    */
   async getValidAccessToken(): Promise<string> {
+    // Captured before the only suspension point (the refresh await); compared again
+    // before re-caching so a logout that landed mid-flight invalidates this call.
+    const epochAtStart = logoutEpoch;
     const expiry = localStorage.getItem('auth_expiry');
     const token = localStorage.getItem('auth_token');
 
@@ -208,7 +221,10 @@ export const authService = {
       const refreshedToken = refreshedAccess
         ? (typeof refreshedAccess === 'object' ? refreshedAccess.token : refreshedAccess)
         : null;
-      if (refreshedToken) {
+      // A refresh that resolved after a logout bumped the epoch is discarded (fall
+      // through to AuthExpiredError below): the token may be live, but the session it
+      // belonged to is gone, and re-caching it would undo the logout wipe.
+      if (refreshedToken && logoutEpoch === epochAtStart) {
         const refreshedExpiry =
           typeof refreshedAccess === 'object' && typeof refreshedAccess.expiresAt === 'number'
             ? refreshedAccess.expiresAt
