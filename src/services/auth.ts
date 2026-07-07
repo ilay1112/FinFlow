@@ -69,6 +69,17 @@ export const authService = {
             webClientId: GOOGLE_CLIENT_ID,
             iOSClientId: GOOGLE_IOS_CLIENT_ID,
             mode: 'online',
+            // Pin the web OAuth redirect to ONE fixed URL. The plugin otherwise defaults
+            // redirect_uri to `origin + current pathname`, so a login started from the
+            // session-expired modal — which can appear on ANY route (/, /expenses,
+            // /invoices…) — sends an unregistered redirect_uri and Google rejects it with
+            // Error 400: redirect_uri_mismatch. Pinning to /login (already the redirect the
+            // normal login-page flow uses, and already authorized in the Google console)
+            // makes every login path use the same authorized URI. Only on web — native
+            // uses its own reversed-client-id scheme, so we must not override it there.
+            ...(Capacitor.isNativePlatform()
+              ? {}
+              : { redirectUrl: `${window.location.origin}/login` }),
           },
         });
         isInitialized = true;
