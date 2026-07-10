@@ -17,6 +17,9 @@ import {
   Mail,
   Ban,
   ReceiptText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
 import { generateInvoicePDF, waitForTemplateReady } from '../services/pdf/invoice-service';
@@ -29,8 +32,27 @@ import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
 import { RowActions } from '../components/ui/RowActions';
+import { TablePagination } from '../components/ui/TablePagination';
 import { useCurrencyFormatter } from '../utils/format';
 import { resolveCopyType, isAccountingDocument } from '../utils/invoiceMath';
+
+/** Clickable, sortable columns. The default ordering is newest-first by the hidden
+ * createdAt timestamp (not a column) — column clicks switch to one of these. */
+type SortKey = 'id' | 'clientName' | 'date' | 'total' | 'status';
+type SortDirection = 'asc' | 'desc';
+type SortState = { key: SortKey | 'createdAt'; direction: SortDirection };
+
+const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: SortState }) => {
+  if (sortConfig.key !== column) return <ArrowUpDown className="ms-2 h-4 w-4" />;
+  return sortConfig.direction === 'asc' ? <ArrowUp className="ms-2 h-4 w-4" /> : <ArrowDown className="ms-2 h-4 w-4" />;
+};
+
+/** Timestamp used to order newest-first: the hidden createdAt, or the document date for
+ * legacy rows that predate it. */
+const invoiceTimestamp = (i: Invoice): number => {
+  const t = i.createdAt ? Date.parse(i.createdAt) : NaN;
+  return Number.isNaN(t) ? (Date.parse(i.date) || 0) : t;
+};
 
 export default function InvoicesView() {
   const { t } = useTranslation();
@@ -46,6 +68,16 @@ export default function InvoicesView() {
 
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+
+  // Default sort: newest first via the hidden createdAt timestamp.
+  const [sortConfig, setSortConfig] = useState<SortState>({ key: 'createdAt', direction: 'desc' });
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+    setPage(1);
+  };
 
   // Handle URL actions (Quick Actions from Dashboard)
   useEffect(() => {
@@ -70,6 +102,28 @@ export default function InvoicesView() {
 
     return matchesSearch && matchesStartDate && matchesEndDate;
   });
+
+  // Sort: the chosen column, then always tiebreak by the hidden createdAt timestamp so
+  // same-date rows stay newest-first. The default key (createdAt) sorts purely by it.
+  const sortedInvoices = [...filteredInvoices].sort((a, b) => {
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    let cmp: number;
+    if (sortConfig.key === 'total') cmp = a.total - b.total;
+    else if (sortConfig.key === 'createdAt') cmp = invoiceTimestamp(a) - invoiceTimestamp(b);
+    else if (sortConfig.key === 'date') cmp = a.date.localeCompare(b.date);
+    else if (sortConfig.key === 'id') cmp = a.id.localeCompare(b.id);
+    else if (sortConfig.key === 'clientName') cmp = a.clientName.localeCompare(b.clientName);
+    else cmp = a.status.localeCompare(b.status);
+    if (cmp !== 0) return cmp * dir;
+    return invoiceTimestamp(b) - invoiceTimestamp(a);
+  });
+
+  // Paginate the sorted result (default 20/page). Clamp the page so a shrunk filter set
+  // never lands past the last page.
+  const totalRows = sortedInvoices.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedInvoices = sortedInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // A חשבון עסקה (TransactionInvoice) is "settled" (נפרע) once a receipt has been
   // issued from it — i.e. some document links back to it via sourceInvoiceId. Derived
@@ -233,7 +287,7 @@ export default function InvoicesView() {
                 placeholder={t('common.search')} 
                 className="ps-9 h-11 md:h-10" 
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
               />
             </div>
 
@@ -245,21 +299,21 @@ export default function InvoicesView() {
                   type="date" 
                   className="bg-transparent border-none focus:ring-0 text-slate-900 flex-1 md:flex-none"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
                 />
                 <span className="text-slate-500 font-medium">{t('expenses.to')}:</span>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className="bg-transparent border-none focus:ring-0 text-slate-900 flex-1 md:flex-none"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
                 />
                 {(startDate || endDate) && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="h-6 px-2 text-[10px]"
-                    onClick={() => { setStartDate(''); setEndDate(''); }}
+                    onClick={() => { setStartDate(''); setEndDate(''); setPage(1); }}
                   >
                     {t('common.clear')}
                   </Button>
@@ -273,17 +327,27 @@ export default function InvoicesView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="ps-6 text-start whitespace-nowrap">{t('invoices.invoice_id')}</TableHead>
-                  <TableHead className="text-start whitespace-nowrap">{t('invoices.client')}</TableHead>
-                  <TableHead className="text-start whitespace-nowrap">{t('common.date')}</TableHead>
-                  <TableHead className="text-start whitespace-nowrap">{t('common.amount')}</TableHead>
-                  <TableHead className="text-start whitespace-nowrap">{t('common.status')}</TableHead>
+                  <TableHead onClick={() => handleSort('id')} className="ps-6 text-start whitespace-nowrap cursor-pointer hover:text-slate-900">
+                    <div className="flex items-center">{t('invoices.invoice_id')} <SortIcon column="id" sortConfig={sortConfig} /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('clientName')} className="text-start whitespace-nowrap cursor-pointer hover:text-slate-900">
+                    <div className="flex items-center">{t('invoices.client')} <SortIcon column="clientName" sortConfig={sortConfig} /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('date')} className="text-start whitespace-nowrap cursor-pointer hover:text-slate-900">
+                    <div className="flex items-center">{t('common.date')} <SortIcon column="date" sortConfig={sortConfig} /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('total')} className="text-start whitespace-nowrap cursor-pointer hover:text-slate-900">
+                    <div className="flex items-center">{t('common.amount')} <SortIcon column="total" sortConfig={sortConfig} /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort('status')} className="text-start whitespace-nowrap cursor-pointer hover:text-slate-900">
+                    <div className="flex items-center">{t('common.status')} <SortIcon column="status" sortConfig={sortConfig} /></div>
+                  </TableHead>
                   <TableHead className="text-end pe-6 whitespace-nowrap">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice) => (
+                {sortedInvoices.length > 0 ? (
+                  pagedInvoices.map((invoice) => (
                     <TableRow key={invoice.id}>
                       <TableCell className="ps-6 font-medium text-primary whitespace-nowrap">{invoice.id}</TableCell>
                       <TableCell className="font-semibold whitespace-nowrap">{invoice.clientName}</TableCell>
@@ -364,6 +428,15 @@ export default function InvoicesView() {
               </TableBody>
             </Table>
           </div>
+          {sortedInvoices.length > 0 && (
+            <TablePagination
+              page={currentPage}
+              pageSize={pageSize}
+              total={totalRows}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            />
+          )}
         </CardContent>
       </Card>
 

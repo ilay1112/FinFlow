@@ -31,11 +31,22 @@ import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { CategoryManagerModal } from '../components/ui/CategoryManagerModal';
 import { RowActions } from '../components/ui/RowActions';
+import { TablePagination } from '../components/ui/TablePagination';
 import { cn } from '../utils/utils';
 import { v4 as uuidv4 } from 'uuid';
 
 type SortKey = 'date' | 'vendor' | 'category' | 'amount';
 type SortDirection = 'asc' | 'desc';
+/** The default 'newest first' ordering uses the hidden createdAt timestamp and is not a
+ * clickable column; column clicks switch to one of the SortKey columns. */
+type SortState = { key: SortKey | 'createdAt'; direction: SortDirection };
+
+/** Timestamp used to order newest-first: the hidden createdAt, or the expense date for
+ * legacy rows that predate it. */
+const expenseTimestamp = (e: Expense): number => {
+  const t = e.createdAt ? Date.parse(e.createdAt) : NaN;
+  return Number.isNaN(t) ? (Date.parse(e.date) || 0) : t;
+};
 
 /**
  * Suggest an input-VAT deductibility class from the expense category (§6, §7).
@@ -58,7 +69,7 @@ const suggestDeductibility = (category: string): VatDeductibility => {
   return 'full';
 };
 
-const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: { key: SortKey; direction: SortDirection } }) => {
+const SortIcon = ({ column, sortConfig }: { column: SortKey; sortConfig: SortState }) => {
   if (sortConfig.key !== column) return <ArrowUpDown className="ms-2 h-4 w-4" />;
   return sortConfig.direction === 'asc' ? <ArrowUp className="ms-2 h-4 w-4" /> : <ArrowDown className="ms-2 h-4 w-4" />;
 };
@@ -158,11 +169,11 @@ export default function ExpensesView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ 
-    key: 'date', 
-    direction: 'desc' 
-  });
-  
+  // Default sort: newest first via the hidden createdAt timestamp.
+  const [sortConfig, setSortConfig] = useState<SortState>({ key: 'createdAt', direction: 'desc' });
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const isRtl = i18n.language === 'he';
@@ -188,6 +199,7 @@ export default function ExpensesView() {
       key,
       direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
     }));
+    setPage(1);
   };
 
   const filteredExpenses = expenses
@@ -202,13 +214,23 @@ export default function ExpensesView() {
       
       return matchesSearch && matchesCategory && matchesStartDate && matchesEndDate;
     })
+    // Sort by the chosen column, then always tiebreak by the hidden createdAt timestamp
+    // so same-date rows stay newest-first. The default key (createdAt) sorts purely by it.
     .sort((a, b) => {
       const factor = sortConfig.direction === 'asc' ? 1 : -1;
-      if (sortConfig.key === 'amount') {
-        return (a.amount - b.amount) * factor;
-      }
-      return (a[sortConfig.key] as string).localeCompare(b[sortConfig.key] as string) * factor;
+      let cmp: number;
+      if (sortConfig.key === 'amount') cmp = a.amount - b.amount;
+      else if (sortConfig.key === 'createdAt') cmp = expenseTimestamp(a) - expenseTimestamp(b);
+      else cmp = a[sortConfig.key].localeCompare(b[sortConfig.key]);
+      if (cmp !== 0) return cmp * factor;
+      return expenseTimestamp(b) - expenseTimestamp(a);
     });
+
+  // Paginate the filtered+sorted result (default 20/page), clamping the page.
+  const totalRows = filteredExpenses.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedExpenses = filteredExpenses.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleOpenModal = (expense?: Expense) => {
     if (expense) {
@@ -454,31 +476,31 @@ export default function ExpensesView() {
                   placeholder={t('common.search')} 
                   className="ps-9 h-11 md:h-10" 
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 bg-slate-50 p-1 md:p-1.5 rounded-lg border text-[11px] md:text-xs w-full md:w-auto">
                   <span className="text-slate-500 font-medium ps-2">{t('expenses.from')}:</span>
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     className="bg-transparent border-none focus:ring-0 text-slate-900 flex-1 md:flex-none"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
                   />
                   <span className="text-slate-500 font-medium">{t('expenses.to')}:</span>
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     className="bg-transparent border-none focus:ring-0 text-slate-900 flex-1 md:flex-none"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
                   />
                   {(startDate || endDate) && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="h-6 px-2 text-[10px]"
-                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      onClick={() => { setStartDate(''); setEndDate(''); setPage(1); }}
                     >
                       {t('common.clear')}
                     </Button>
@@ -488,20 +510,20 @@ export default function ExpensesView() {
             </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
               <Filter className="h-4 w-4 text-slate-400 shrink-0" />
-              <Button 
-                variant={categoryFilter === 'All' ? 'default' : 'outline'} 
+              <Button
+                variant={categoryFilter === 'All' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setCategoryFilter('All')}
+                onClick={() => { setCategoryFilter('All'); setPage(1); }}
                 className="h-9 md:h-8 whitespace-nowrap text-xs font-medium px-4"
               >
                 {t('common.all')}
               </Button>
               {categories.map(cat => (
-                <Button 
-                  key={cat} 
-                  variant={categoryFilter === cat ? 'default' : 'outline'} 
+                <Button
+                  key={cat}
+                  variant={categoryFilter === cat ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setCategoryFilter(cat)}
+                  onClick={() => { setCategoryFilter(cat); setPage(1); }}
                   className="h-9 md:h-8 whitespace-nowrap text-xs font-medium px-4"
                 >
                   {cat}
@@ -533,7 +555,7 @@ export default function ExpensesView() {
               </TableHeader>
               <TableBody>
                 {filteredExpenses.length > 0 ? (
-                  filteredExpenses.map((expense) => (
+                  pagedExpenses.map((expense) => (
                     <TableRow key={expense.id}>
                       <TableCell className="font-medium whitespace-nowrap">{expense.date}</TableCell>
                       <TableCell className="whitespace-nowrap">{expense.vendor}</TableCell>
@@ -586,6 +608,15 @@ export default function ExpensesView() {
               </TableBody>
             </Table>
           </div>
+          {filteredExpenses.length > 0 && (
+            <TablePagination
+              page={currentPage}
+              pageSize={pageSize}
+              total={totalRows}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            />
+          )}
         </CardContent>
       </Card>
 

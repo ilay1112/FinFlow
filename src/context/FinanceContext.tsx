@@ -95,6 +95,10 @@ export interface Expense {
   hasValidTaxInvoice?: boolean;
   /** Supplier's allocation number (מספר הקצאה), when the supplier was required to issue one (purchase >= dated threshold, pre-VAT). Missing it blocks the deduction above the threshold. */
   supplierAllocationNumber?: string;
+  /** ISO timestamp of when the record was created in the app. Hidden field used only to
+   * order lists newest-first reliably (a stable tiebreaker when several rows share a
+   * `date`). Absent on legacy rows — callers fall back to `date`. */
+  createdAt?: string;
 }
 
 export interface Client {
@@ -195,6 +199,10 @@ export interface Invoice {
    * 'exempt' = Field 3. Only meaningful for an Osek Morshe / Company.
    */
   vatTreatment?: VatTreatment;
+  /** ISO timestamp of when the document was created in the app. Hidden field used only
+   * to order lists newest-first reliably (a stable tiebreaker when several documents
+   * share a `date`). Absent on legacy documents — callers fall back to `date`. */
+  createdAt?: string;
   /**
    * Set on a receipt (or other document) that was issued from a חשבון עסקה
    * (TransactionInvoice) via the "create receipt from this" flow — points at the
@@ -701,7 +709,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [isAuthenticated, markPendingSave]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
-    const newExpense = { ...expense, id: expense.id || uuidv4() };
+    const newExpense = { ...expense, id: expense.id || uuidv4(), createdAt: expense.createdAt || new Date().toISOString() };
     setExpenses(prev => [newExpense, ...prev]);
     return newExpense;
   };
@@ -809,7 +817,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // `invoice` payload below. A future server-side integration can fetch it in real
     // time at this seam before the document is issued.
 
-    const newInvoice: Invoice = { ...invoice, id, total };
+    const newInvoice: Invoice = { ...invoice, id, total, createdAt: new Date().toISOString() };
 
     setInvoices(prev => [newInvoice, ...prev]);
     setBusinessSettings(prev => ({ ...prev, docCounters: nextCounters }));

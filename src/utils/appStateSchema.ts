@@ -163,6 +163,7 @@ function normalizeExpense(raw: unknown): Expense | null {
     vatDeductibility: oneOfOptional(raw.vatDeductibility, VAT_DEDUCTIBILITY),
     hasValidTaxInvoice: raw.hasValidTaxInvoice === undefined ? undefined : toBool(raw.hasValidTaxInvoice),
     supplierAllocationNumber: toOptionalStr(raw.supplierAllocationNumber),
+    createdAt: toOptionalStr(raw.createdAt),
   };
 }
 
@@ -238,6 +239,7 @@ function normalizeInvoice(raw: unknown): Invoice | null {
     allocationNumber: toOptionalStr(raw.allocationNumber),
     vatTreatment: oneOfOptional(raw.vatTreatment, VAT_TREATMENTS),
     sourceInvoiceId: toOptionalStr(raw.sourceInvoiceId),
+    createdAt: toOptionalStr(raw.createdAt),
   };
 }
 
