@@ -28,6 +28,7 @@ import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
+import { RowActions } from '../components/ui/RowActions';
 import { useCurrencyFormatter } from '../utils/format';
 import { resolveCopyType } from '../utils/invoiceMath';
 
@@ -282,72 +283,55 @@ export default function InvoicesView() {
                       <TableCell className="font-bold text-slate-900 whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
                       <TableCell className="whitespace-nowrap">{getStatusBadge(invoice.status)}</TableCell>
                       <TableCell className="text-end pe-6">
-                        <div className="flex justify-end gap-1">
-                          {/* Issue a receipt (קבלה) from a transaction invoice (חשבון עסקה):
-                              opens a new document prefilled with this one's client, items,
-                              price and booking agent — the user only picks a payment method. */}
-                          {invoice.documentType === 'TransactionInvoice' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-green-600"
-                              onClick={() => navigate(`/invoices/new?fromInvoice=${invoice.id}&as=Receipt`)}
-                              title={t('invoices.create_receipt_from')}
-                            >
-                              <ReceiptText className="h-5 w-5 md:h-4 md:w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-blue-600"
-                            onClick={() => setSendInvoice(invoice)}
-                            title={t('invoices.send_invoice')}
-                          >
-                            <Mail className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
-                            disabled={isGeneratingPDF}
-                            onClick={() => handleDownloadPDF(invoice)}
-                            title={t('invoices.download_pdf')}
-                          >
-                            <FileDown className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                          {invoice.status === 'Paid' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-amber-600"
-                              onClick={() => handleOpenRefundAlert(invoice)}
-                              title={t('invoices.refund')}
-                            >
-                              <RotateCcw className="h-5 w-5 md:h-4 md:w-4" />
-                            </Button>
-                          )}
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
-                            onClick={() => navigate(`/invoices/${invoice.id}/edit`)}
-                            title={t('common.edit')}
-                          >
-                            <Edit2 className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-10 w-10 md:h-8 md:w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => handleOpenDeleteAlert(invoice)}
-                            title={invoice.status === 'Draft' ? t('common.delete') : t('invoices.cancel_document')}
-                          >
-                            {invoice.status === 'Draft'
-                              ? <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
-                              : <Ban className="h-5 w-5 md:h-4 md:w-4" />}
-                          </Button>
-                        </div>
+                        <RowActions actions={[
+                          // Issue a receipt (קבלה) from a transaction invoice (חשבון עסקה):
+                          // opens a new document prefilled with this one's client, items,
+                          // price and booking agent — the user only picks a payment method.
+                          ...(invoice.documentType === 'TransactionInvoice' ? [{
+                            key: 'receipt',
+                            icon: ReceiptText,
+                            label: t('invoices.create_receipt_from'),
+                            inlineClassName: 'hover:text-green-600',
+                            onClick: () => navigate(`/invoices/new?fromInvoice=${invoice.id}&as=Receipt`),
+                          }] : []),
+                          {
+                            key: 'send',
+                            icon: Mail,
+                            label: t('invoices.send_invoice'),
+                            inlineClassName: 'hover:text-blue-600',
+                            onClick: () => setSendInvoice(invoice),
+                          },
+                          {
+                            key: 'pdf',
+                            icon: FileDown,
+                            label: t('invoices.download_pdf'),
+                            inlineClassName: 'hover:text-primary',
+                            disabled: isGeneratingPDF,
+                            onClick: () => handleDownloadPDF(invoice),
+                          },
+                          ...(invoice.status === 'Paid' ? [{
+                            key: 'refund',
+                            icon: RotateCcw,
+                            label: t('invoices.refund'),
+                            inlineClassName: 'hover:text-amber-600',
+                            onClick: () => handleOpenRefundAlert(invoice),
+                          }] : []),
+                          {
+                            key: 'edit',
+                            icon: Edit2,
+                            label: t('common.edit'),
+                            inlineClassName: 'hover:text-primary',
+                            onClick: () => navigate(`/invoices/${invoice.id}/edit`),
+                          },
+                          {
+                            key: 'delete',
+                            icon: invoice.status === 'Draft' ? Trash2 : Ban,
+                            label: invoice.status === 'Draft' ? t('common.delete') : t('invoices.cancel_document'),
+                            destructive: true,
+                            inlineClassName: 'text-red-400 hover:text-red-600 hover:bg-red-50',
+                            onClick: () => handleOpenDeleteAlert(invoice),
+                          },
+                        ]} />
                       </TableCell>
                     </TableRow>
                   ))

@@ -21,6 +21,7 @@ import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
+import { RowActions } from '../components/ui/RowActions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 
 export default function BookingAgentsView() {
@@ -277,35 +278,30 @@ export default function BookingAgentsView() {
                         </span>
                       </TableCell>
                       <TableCell className="text-end pe-6">
-                        <div className="flex justify-end gap-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-slate-400 hover:text-primary"
-                            onClick={() => handleOpenHistory(bookingAgent)}
-                            title={t('bookingAgents.history')}
-                          >
-                            <History className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-slate-400 hover:text-primary"
-                            onClick={() => handleOpenModal(bookingAgent)}
-                            title={t('common.edit')}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-slate-400 hover:text-red-500"
-                            onClick={() => handleOpenDeleteAlert(bookingAgent.id)}
-                            title={t('common.delete')}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <RowActions actions={[
+                          {
+                            key: 'history',
+                            icon: History,
+                            label: t('bookingAgents.history'),
+                            inlineClassName: 'hover:text-primary',
+                            onClick: () => handleOpenHistory(bookingAgent),
+                          },
+                          {
+                            key: 'edit',
+                            icon: Edit2,
+                            label: t('common.edit'),
+                            inlineClassName: 'hover:text-primary',
+                            onClick: () => handleOpenModal(bookingAgent),
+                          },
+                          {
+                            key: 'delete',
+                            icon: Trash2,
+                            label: t('common.delete'),
+                            destructive: true,
+                            inlineClassName: 'text-red-400 hover:text-red-500',
+                            onClick: () => handleOpenDeleteAlert(bookingAgent.id),
+                          },
+                        ]} />
                       </TableCell>
                     </TableRow>
                   ))

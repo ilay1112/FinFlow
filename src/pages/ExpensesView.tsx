@@ -30,6 +30,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { CategoryManagerModal } from '../components/ui/CategoryManagerModal';
+import { RowActions } from '../components/ui/RowActions';
 import { cn } from '../utils/utils';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -548,37 +549,30 @@ export default function ExpensesView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-end whitespace-nowrap">
-                        <div className="flex justify-end gap-1">
-                          {expense.receiptStatus === 'Uploaded' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-blue-500"
-                              onClick={() => setViewingReceipt(expense)}
-                              title={t('expenses.view_receipt')}
-                            >
-                              <Eye className="h-5 w-5 md:h-4 md:w-4" />
-                            </Button>
-                          )}
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-primary"
-                            onClick={() => handleOpenModal(expense)}
-                            title={t('common.edit')}
-                          >
-                            <Edit2 className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-10 w-10 md:h-8 md:w-8 text-red-400 hover:text-red-600"
-                            onClick={() => handleOpenDeleteAlert(expense.id)}
-                            title={t('common.delete')}
-                          >
-                            <Trash2 className="h-5 w-5 md:h-4 md:w-4" />
-                          </Button>
-                        </div>
+                        <RowActions actions={[
+                          ...(expense.receiptStatus === 'Uploaded' ? [{
+                            key: 'view',
+                            icon: Eye,
+                            label: t('expenses.view_receipt'),
+                            inlineClassName: 'hover:text-blue-500',
+                            onClick: () => setViewingReceipt(expense),
+                          }] : []),
+                          {
+                            key: 'edit',
+                            icon: Edit2,
+                            label: t('common.edit'),
+                            inlineClassName: 'hover:text-primary',
+                            onClick: () => handleOpenModal(expense),
+                          },
+                          {
+                            key: 'delete',
+                            icon: Trash2,
+                            label: t('common.delete'),
+                            destructive: true,
+                            inlineClassName: 'text-red-400 hover:text-red-600',
+                            onClick: () => handleOpenDeleteAlert(expense.id),
+                          },
+                        ]} />
                       </TableCell>
                     </TableRow>
                   ))
