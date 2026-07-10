@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Mail,
   Ban,
+  ReceiptText,
 } from 'lucide-react';
 import { useFinance, type Invoice } from '../context/FinanceContext';
 import { generateInvoicePDF, waitForTemplateReady } from '../services/pdf/invoice-service';
@@ -282,6 +283,20 @@ export default function InvoicesView() {
                       <TableCell className="whitespace-nowrap">{getStatusBadge(invoice.status)}</TableCell>
                       <TableCell className="text-end pe-6">
                         <div className="flex justify-end gap-1">
+                          {/* Issue a receipt (קבלה) from a transaction invoice (חשבון עסקה):
+                              opens a new document prefilled with this one's client, items,
+                              price and booking agent — the user only picks a payment method. */}
+                          {invoice.documentType === 'TransactionInvoice' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 md:h-8 md:w-8 text-slate-400 hover:text-green-600"
+                              onClick={() => navigate(`/invoices/new?fromInvoice=${invoice.id}&as=Receipt`)}
+                              title={t('invoices.create_receipt_from')}
+                            >
+                              <ReceiptText className="h-5 w-5 md:h-4 md:w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"

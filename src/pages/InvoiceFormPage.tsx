@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -10,6 +10,7 @@ import {
   UserPlus,
   ChevronLeft,
   AlertTriangle,
+  ReceiptText,
 } from 'lucide-react';
 import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod, type PaymentLine, type VatTreatment } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
@@ -61,10 +62,21 @@ export default function InvoiceFormPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
   const { invoices, clients, bookingAgents, addInvoice, updateInvoice, businessSettings } = useFinance();
 
   const editingInvoice = id ? invoices.find(inv => inv.id === id) ?? null : null;
   const isEditing = !!editingInvoice;
+
+  // "Create a follow-up document from an existing one" flow (e.g. issue a קבלה from a
+  // חשבון עסקה). We are NOT editing the source: this is a brand-new document that copies
+  // the client, items, price and booking agent so the user only has to pick a payment
+  // method. `as` is the document type to create (defaults to Receipt). Ignored while
+  // editing an existing invoice.
+  const sourceInvoiceId = !id ? searchParams.get('fromInvoice') : null;
+  const sourceInvoice = sourceInvoiceId
+    ? invoices.find(inv => inv.id === sourceInvoiceId) ?? null
+    : null;
 
   const isPatur = businessSettings.type === 'EsekPatur';
 
@@ -83,6 +95,13 @@ export default function InvoiceFormPage() {
   const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   const today = new Date().toISOString().split('T')[0];
+
+  // The document type to create when seeding from a source document (?as=…),
+  // constrained to a type this business may issue; defaults to a Receipt (קבלה).
+  const seededDocumentType: DocumentType = (() => {
+    const requested = searchParams.get('as') as DocumentType | null;
+    return requested && allowedDocumentTypes.includes(requested) ? requested : 'Receipt';
+  })();
 
   const [formData, setFormData] = useState<InvoiceFormData>(() => {
     if (editingInvoice) {
@@ -104,6 +123,27 @@ export default function InvoiceFormPage() {
         vatTreatment: editingInvoice.vatTreatment ?? 'standard',
       };
     }
+    if (sourceInvoice) {
+      // Copy everything that defines the deal (client, items, price, agent) from the
+      // source document into a fresh one. Payment lines start empty so the user just
+      // picks a method (the form shows a single seed line synced to the total). The new
+      // document gets today's date, a fresh number (via addInvoice) and no allocation
+      // number of its own. All fields stay editable.
+      return {
+        clientId: sourceInvoice.clientId,
+        documentType: seededDocumentType,
+        paymentLines: [],
+        bookingAgentId: sourceInvoice.bookingAgentId || '',
+        commissionAmount: sourceInvoice.commissionAmount || 0,
+        date: today,
+        dueDate: today,
+        items: sourceInvoice.items.map(item => ({ ...item })),
+        taxRate: isPatur ? 0 : sourceInvoice.taxRate,
+        status: 'Paid',
+        allocationNumber: '',
+        vatTreatment: sourceInvoice.vatTreatment ?? 'standard',
+      };
+    }
     return {
       clientId: '',
       documentType: isPatur ? 'Receipt' : 'TaxInvoice',
@@ -121,9 +161,10 @@ export default function InvoiceFormPage() {
   });
 
   useEffect(() => {
-    if (editingInvoice) {
-      setClientSearchTerm(editingInvoice.clientName);
-      setAgentSearchTerm(editingInvoice.bookingAgentName || '');
+    const seed = editingInvoice ?? sourceInvoice;
+    if (seed) {
+      setClientSearchTerm(seed.clientName);
+      setAgentSearchTerm(seed.bookingAgentName || '');
     }
   }, []);
 
@@ -342,13 +383,28 @@ export default function InvoiceFormPage() {
           <ChevronLeft className="h-5 w-5" />
         </button>
         <h1 className="text-lg font-bold text-slate-900 flex-1">
-          {isEditing ? `${t('common.edit')} ${editingInvoice!.id}` : t('invoices.create_invoice')}
+          {isEditing
+            ? `${t('common.edit')} ${editingInvoice!.id}`
+            : sourceInvoice
+              ? t('invoices.create_receipt')
+              : t('invoices.create_invoice')}
         </h1>
       </div>
 
       {/* Scrollable form body */}
       <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+
+          {/* Prefilled-from-source note: everything is copied; the user only needs to
+              pick a payment method (but may edit any field). */}
+          {sourceInvoice && (
+            <div className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+              <ReceiptText className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-indigo-800 leading-relaxed">
+                {t('invoices.prefilled_from_note', { id: sourceInvoice.id })}
+              </p>
+            </div>
+          )}
 
           {/* Client */}
           <div className="space-y-1.5 relative" ref={dropdownRef}>
@@ -747,7 +803,11 @@ export default function InvoiceFormPage() {
           onClick={handleSubmit}
           disabled={paymentsBlockSave}
         >
-          {isEditing ? t('common.save') : t('invoices.create_invoice')}
+          {isEditing
+            ? t('common.save')
+            : sourceInvoice
+              ? t('invoices.create_receipt')
+              : t('invoices.create_invoice')}
         </Button>
       </div>
     </div>
