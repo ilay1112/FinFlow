@@ -367,19 +367,6 @@ export default function InvoiceFormPage() {
       updateInvoice(editingInvoice.id, invoiceData);
     } else {
       addInvoice(invoiceData);
-      // "Issue receipt from חשבון עסקה" flow: once a payment-recording document (קבלה /
-      // חשבונית מס-קבלה) is issued for the source demand document, the demand is settled
-      // — mark it Paid. Skip a source that is already Paid or in a terminal state
-      // (Cancelled/Refunded) so this never resurrects a cancelled document.
-      if (
-        sourceInvoice &&
-        recordsPayment(documentType) &&
-        sourceInvoice.status !== 'Paid' &&
-        sourceInvoice.status !== 'Cancelled' &&
-        sourceInvoice.status !== 'Refunded'
-      ) {
-        updateInvoice(sourceInvoice.id, { status: 'Paid' });
-      }
     }
     navigate('/invoices');
   };
