@@ -30,7 +30,7 @@ import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
 import { RowActions } from '../components/ui/RowActions';
 import { useCurrencyFormatter } from '../utils/format';
-import { resolveCopyType } from '../utils/invoiceMath';
+import { resolveCopyType, isAccountingDocument } from '../utils/invoiceMath';
 
 export default function InvoicesView() {
   const { t } = useTranslation();
@@ -71,11 +71,21 @@ export default function InvoicesView() {
     return matchesSearch && matchesStartDate && matchesEndDate;
   });
 
-  // Analytics
-  const totalPaid = invoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + i.total, 0);
-  const totalOutstanding = invoices.filter(i => i.status === 'Sent').reduce((sum, i) => sum + i.total, 0);
-  const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + i.total, 0);
-  const totalRefunded = invoices.filter(i => i.status === 'Refunded').reduce((sum, i) => sum + i.total, 0);
+  // A חשבון עסקה (TransactionInvoice) is "settled" (נפרע) once a receipt has been
+  // issued from it — i.e. some document links back to it via sourceInvoiceId. Derived
+  // (not stored on the source) so an issued demand document is never mutated.
+  const settledSourceIds = new Set(
+    invoices.map(i => i.sourceInvoiceId).filter((id): id is string => !!id)
+  );
+
+  // Analytics — money KPIs count accounting documents only; a חשבון עסקה
+  // (TransactionInvoice) is a demand/quote and never contributes to a money total
+  // (it still appears as a row, and shows נפרע once a receipt is issued for it).
+  const acct = (i: Invoice) => isAccountingDocument(i.documentType);
+  const totalPaid = invoices.filter(i => i.status === 'Paid' && acct(i)).reduce((sum, i) => sum + i.total, 0);
+  const totalOutstanding = invoices.filter(i => i.status === 'Sent' && acct(i)).reduce((sum, i) => sum + i.total, 0);
+  const totalOverdue = invoices.filter(i => i.status === 'Overdue' && acct(i)).reduce((sum, i) => sum + i.total, 0);
+  const totalRefunded = invoices.filter(i => i.status === 'Refunded' && acct(i)).reduce((sum, i) => sum + i.total, 0);
 
   const handleOpenDeleteAlert = (invoice: Invoice) => {
     setInvoiceToDelete(invoice);
@@ -281,7 +291,16 @@ export default function InvoicesView() {
                         {invoice.date}
                       </TableCell>
                       <TableCell className="font-bold text-slate-900 whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{getStatusBadge(invoice.status)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          {getStatusBadge(invoice.status)}
+                          {invoice.documentType === 'TransactionInvoice' && settledSourceIds.has(invoice.id) && (
+                            <Badge variant="success" className="gap-1">
+                              <CheckCircle className="h-3 w-3" /> {t('invoices.settled')}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-end pe-6">
                         <RowActions actions={[
                           // Issue a receipt (קבלה) from a transaction invoice (חשבון עסקה):

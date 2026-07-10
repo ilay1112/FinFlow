@@ -237,6 +237,7 @@ function normalizeInvoice(raw: unknown): Invoice | null {
     firstIssuedAt: toOptionalStr(raw.firstIssuedAt),
     allocationNumber: toOptionalStr(raw.allocationNumber),
     vatTreatment: oneOfOptional(raw.vatTreatment, VAT_TREATMENTS),
+    sourceInvoiceId: toOptionalStr(raw.sourceInvoiceId),
   };
 }
 

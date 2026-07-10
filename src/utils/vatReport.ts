@@ -9,7 +9,7 @@
  * (edge cases). Doc fields 1–7 map to the periodic VAT return summary fields.
  */
 import type { Invoice, Expense, VatDeductibility, VatTreatment } from '../context/FinanceContext';
-import { computeTotals } from './invoiceMath';
+import { computeTotals, isAccountingDocument } from './invoiceMath';
 
 export type VatPeriodType = 'monthly' | 'bimonthly';
 
@@ -277,6 +277,9 @@ export function buildVatReport(
   // ----- Output side (invoices) -----
   for (const inv of invoices) {
     if (EXCLUDED_STATUSES.includes(inv.status)) continue;
+    // A חשבון עסקה (TransactionInvoice) is a demand/quote, not a VAT event — the
+    // receipt / tax invoice issued for it carries the VAT. Never count it here.
+    if (!isAccountingDocument(inv.documentType)) continue;
     const { date: recognition, approxReason } = resolveOutputRecognition(inv, opts.cashBasis);
     if (!samePeriod(periodFor(recognition, period.type), period)) continue;
 
@@ -405,6 +408,7 @@ export function buildAllVatReports(
   const dates: string[] = [];
   for (const inv of invoices) {
     if (EXCLUDED_STATUSES.includes(inv.status)) continue;
+    if (!isAccountingDocument(inv.documentType)) continue;
     dates.push(outputRecognitionDate(inv, opts.cashBasis));
   }
   for (const exp of expenses) dates.push(exp.date);

@@ -8,6 +8,7 @@ import {
   seedDocCounters,
   recordsPayment,
   validatePayments,
+  isAccountingDocument,
 } from '../utils/invoiceMath';
 import { getCashLimit } from '../config/taxConfig';
 import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
@@ -194,6 +195,13 @@ export interface Invoice {
    * 'exempt' = Field 3. Only meaningful for an Osek Morshe / Company.
    */
   vatTreatment?: VatTreatment;
+  /**
+   * Set on a receipt (or other document) that was issued from a חשבון עסקה
+   * (TransactionInvoice) via the "create receipt from this" flow — points at the
+   * source document's id. Used to show the source as נפרע/settled and to keep the
+   * quote→payment paper trail. Absent on documents created directly.
+   */
+  sourceInvoiceId?: string;
 }
 
 interface FinanceContextType {
@@ -805,99 +813,75 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setInvoices(prev => [newInvoice, ...prev]);
     setBusinessSettings(prev => ({ ...prev, docCounters: nextCounters }));
-    setClients(prev => prev.map(c =>
-      c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
-    ));
 
-    if (invoice.bookingAgentId && invoice.commissionAmount) {
-      setBookingAgents(prev => prev.map(a =>
-        a.id === invoice.bookingAgentId ? { ...a, totalCommissions: a.totalCommissions + invoice.commissionAmount! } : a
+    // A חשבון עסקה (TransactionInvoice) is a demand/quote, not an accounting event, so
+    // it never adds to client billing or agent commissions — only the receipt/tax
+    // invoice issued for it does (isAccountingDocument).
+    if (isAccountingDocument(invoice.documentType)) {
+      setClients(prev => prev.map(c =>
+        c.id === invoice.clientId ? { ...c, totalBilled: c.totalBilled + total } : c
       ));
+
+      if (invoice.bookingAgentId && invoice.commissionAmount) {
+        setBookingAgents(prev => prev.map(a =>
+          a.id === invoice.bookingAgentId ? { ...a, totalCommissions: a.totalCommissions + invoice.commissionAmount! } : a
+        ));
+      }
     }
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
-    // Cash Law / multi-payment defense-in-depth (mirror of addInvoice): if the edit
-    // results in an ISSUED (non-Draft) payment-recording document, its payment lines
-    // must sum to the (recomputed) total and keep cash under the dated cap. Refuse
-    // the edit otherwise so the form gating cannot be bypassed.
     const target = invoices.find(inv => inv.id === id);
-    if (target) {
-      const candidate = { ...target, ...updates };
-      if (recordsPayment(candidate.documentType) && candidate.status !== 'Draft') {
-        const candidateTotal = computeTotals(candidate.items, candidate.taxRate).total;
-        const lines = candidate.paymentLines ?? [];
-        if (!validatePayments(candidateTotal, lines, getCashLimit(candidate.date)).ok) {
-          console.error('Refusing to update invoice: payment lines invalid (Cash Law / unbalanced).');
-          return;
-        }
+    if (!target) return;
+
+    // The updated document, with its total recomputed from items/taxRate.
+    const candidate: Invoice = { ...target, ...updates };
+    candidate.total = computeTotals(candidate.items, candidate.taxRate).total;
+
+    // Cash Law / multi-payment defense-in-depth (mirror of addInvoice): an ISSUED
+    // (non-Draft) payment-recording document must carry balanced, under-cap payment
+    // lines. Refuse the edit otherwise so the form gating cannot be bypassed.
+    if (recordsPayment(candidate.documentType) && candidate.status !== 'Draft') {
+      const lines = candidate.paymentLines ?? [];
+      if (!validatePayments(candidate.total, lines, getCashLimit(candidate.date)).ok) {
+        console.error('Refusing to update invoice: payment lines invalid (Cash Law / unbalanced).');
+        return;
       }
     }
 
-    let billedAdjustment = 0;
-    let clientId = '';
-    
-    let oldAgentId = '';
-    let oldCommission = 0;
-    let newAgentId = '';
-    let newCommission = 0;
-    let hasAgentChange = false;
-    let hasCommissionChange = false;
+    setInvoices(prev => prev.map(inv => (inv.id === id ? candidate : inv)));
 
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        const updated = { ...inv, ...updates };
-        clientId = inv.clientId;
-        
-        oldAgentId = inv.bookingAgentId || '';
-        oldCommission = inv.commissionAmount || 0;
-        newAgentId = updated.bookingAgentId || '';
-        newCommission = updated.commissionAmount || 0;
-        
-        if (oldAgentId !== newAgentId) {
-          hasAgentChange = true;
-        } else if (oldCommission !== newCommission) {
-          hasCommissionChange = true;
-        }
-
-        // Recalculate total if items or taxRate changed
-        updated.total = computeTotals(updated.items, updated.taxRate).total;
-
-        // Handle totalBilled adjustment for clients
-        if (inv.status !== 'Refunded' && updated.status === 'Refunded') {
-          billedAdjustment = -updated.total;
-        } else if (inv.status === 'Refunded' && updated.status !== 'Refunded') {
-          billedAdjustment = updated.total;
-        } else if (inv.total !== updated.total && updated.status !== 'Refunded') {
-          billedAdjustment = updated.total - inv.total;
-        }
-
-        return updated;
-      }
-      return inv;
-    }));
-
-    if (billedAdjustment !== 0 && clientId) {
-      setClients(prev => prev.map(c => 
-        c.id === clientId ? { ...c, totalBilled: c.totalBilled + billedAdjustment } : c
+    // Client totalBilled: a document contributes its total unless it is Refunded or a
+    // non-accounting חשבון עסקה. Diffing old vs new contribution handles total, status
+    // and documentType changes (incl. switching a doc into/out of חשבון עסקה) uniformly.
+    const billedOf = (inv: Invoice) =>
+      inv.status !== 'Refunded' && isAccountingDocument(inv.documentType) ? inv.total : 0;
+    const billedAdjustment = billedOf(candidate) - billedOf(target);
+    if (billedAdjustment !== 0) {
+      setClients(prev => prev.map(c =>
+        c.id === target.clientId ? { ...c, totalBilled: c.totalBilled + billedAdjustment } : c
       ));
     }
 
-    if (hasAgentChange) {
+    // Agent commission uses the same contribution model (a חשבון עסקה never accrues
+    // commission). Handle the agent staying the same vs. switching agents.
+    const oldAgentId = target.bookingAgentId || '';
+    const newAgentId = candidate.bookingAgentId || '';
+    const oldContrib = isAccountingDocument(target.documentType) ? (target.commissionAmount || 0) : 0;
+    const newContrib = isAccountingDocument(candidate.documentType) ? (candidate.commissionAmount || 0) : 0;
+    if (oldAgentId === newAgentId) {
+      const delta = newContrib - oldContrib;
+      if (oldAgentId && delta !== 0) {
+        setBookingAgents(prev => prev.map(a =>
+          a.id === oldAgentId ? { ...a, totalCommissions: Math.max(0, a.totalCommissions + delta) } : a
+        ));
+      }
+    } else {
       setBookingAgents(prev => prev.map(a => {
-        if (a.id === oldAgentId) {
-          return { ...a, totalCommissions: Math.max(0, a.totalCommissions - oldCommission) };
-        }
-        if (a.id === newAgentId) {
-          return { ...a, totalCommissions: a.totalCommissions + newCommission };
-        }
+        if (a.id === oldAgentId) return { ...a, totalCommissions: Math.max(0, a.totalCommissions - oldContrib) };
+        if (a.id === newAgentId) return { ...a, totalCommissions: Math.max(0, a.totalCommissions + newContrib) };
         return a;
       }));
-    } else if (hasCommissionChange && oldAgentId) {
-      const adjustment = newCommission - oldCommission;
-      setBookingAgents(prev => prev.map(a => 
-        a.id === oldAgentId ? { ...a, totalCommissions: a.totalCommissions + adjustment } : a
-      ));
     }
   };
 
@@ -912,8 +896,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!invoice) return;
 
     // Reverse this document's contribution to client billing / agent commissions
-    // unless it was already excluded (Refunded/Cancelled never counted).
-    const alreadyExcluded = invoice.status === 'Refunded' || invoice.status === 'Cancelled';
+    // unless it was already excluded — Refunded/Cancelled never counted, and a
+    // non-accounting חשבון עסקה never contributed in the first place.
+    const alreadyExcluded =
+      invoice.status === 'Refunded' ||
+      invoice.status === 'Cancelled' ||
+      !isAccountingDocument(invoice.documentType);
     if (!alreadyExcluded) {
       setClients(prev => prev.map(c =>
         c.id === invoice.clientId ? { ...c, totalBilled: Math.max(0, c.totalBilled - invoice.total) } : c

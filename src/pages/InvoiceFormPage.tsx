@@ -361,6 +361,10 @@ export default function InvoiceFormPage() {
       // (0% by exemption, not by zero-rating), so only persist a non-standard
       // treatment for a VAT-registered business.
       vatTreatment: isPatur ? 'standard' : formData.vatTreatment,
+      // Link back to the source חשבון עסקה when this document is created from one, so
+      // the source can be shown as נפרע/settled. Only on create-from-source — never
+      // add it on a plain edit (that would clobber an existing link).
+      ...(sourceInvoice && !isEditing ? { sourceInvoiceId: sourceInvoice.id } : {}),
     };
 
     if (isEditing && editingInvoice) {

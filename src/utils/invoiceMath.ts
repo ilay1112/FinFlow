@@ -82,6 +82,17 @@ export function recordsPayment(documentType?: DocumentType): boolean {
   return documentType === 'Receipt' || documentType === 'TaxInvoiceReceipt';
 }
 
+/**
+ * Whether a document is an ACCOUNTING event — i.e. it contributes to turnover,
+ * revenue, client billing, agent commissions and VAT. A חשבון עסקה
+ * (TransactionInvoice) is a demand/quote, not a tax or income event, so it is the
+ * one document type that counts for NONE of those figures; the קבלה (or tax invoice)
+ * issued for it is the real accounting event. Single source of truth for that rule.
+ */
+export function isAccountingDocument(documentType?: DocumentType): boolean {
+  return documentType !== 'TransactionInvoice';
+}
+
 /** Total tendered across all payment lines. */
 export function sumPayments(lines: PaymentLine[]): number {
   return lines.reduce((sum, line) => sum + (line.amount || 0), 0);
@@ -187,7 +198,7 @@ export function paymentLinesOf(
  * so no VAT is stripped here.
  */
 export function computeYtdTurnover(
-  invoices: Pick<Invoice, 'date' | 'status' | 'total'>[],
+  invoices: Pick<Invoice, 'date' | 'status' | 'total' | 'documentType'>[],
   year: number
 ): number {
   return invoices
@@ -195,6 +206,7 @@ export function computeYtdTurnover(
       inv =>
         inv.status !== 'Draft' &&
         inv.status !== 'Cancelled' &&
+        isAccountingDocument(inv.documentType) &&
         new Date(inv.date).getFullYear() === year
     )
     .reduce((sum, inv) => sum + inv.total, 0);

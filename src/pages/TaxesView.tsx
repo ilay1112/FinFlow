@@ -4,6 +4,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
+import { isAccountingDocument } from '../utils/invoiceMath';
 import { useCurrencyFormatter } from '../utils/format';
 import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
 
@@ -11,8 +12,10 @@ export default function TaxesView() {
   const { t } = useTranslation();
   const { expenses, invoices, businessSettings } = useFinance();
 
+  // A חשבון עסקה (TransactionInvoice) is a demand/quote, not income — only the
+  // receipt/tax invoice issued for it counts toward taxable revenue.
   const totalRevenue = invoices
-    .filter(i => i.status === 'Paid')
+    .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType))
     .reduce((sum, i) => sum + i.total, 0);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);

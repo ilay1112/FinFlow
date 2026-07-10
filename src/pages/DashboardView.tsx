@@ -48,6 +48,7 @@ import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
 import { cn } from '../utils/utils';
 
 import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
+import { isAccountingDocument } from '../utils/invoiceMath';
 import { useCurrencyFormatter } from '../utils/format';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'];
@@ -114,12 +115,14 @@ export default function DashboardView() {
   const currentExpenses = expenses.filter(e => isWithinInterval(parseISO(e.date), { start, end }));
   const prevExpenses = expenses.filter(e => isWithinInterval(parseISO(e.date), { start: prevStart, end: prevEnd }));
   
+  // A חשבון עסקה (TransactionInvoice) is a demand/quote, not income — exclude it from
+  // revenue and commissions; only the receipt/tax invoice issued for it counts.
   const currentRevenue = invoices
-    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start, end }))
+    .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType) && isWithinInterval(parseISO(i.date), { start, end }))
     .reduce((sum, i) => sum + i.total, 0);
-  
+
   const prevRevenue = invoices
-    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start: prevStart, end: prevEnd }))
+    .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType) && isWithinInterval(parseISO(i.date), { start: prevStart, end: prevEnd }))
     .reduce((sum, i) => sum + i.total, 0);
 
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -127,11 +130,11 @@ export default function DashboardView() {
 
   // Consider all booking agent commissions as an expense against the net profit
   const totalAgentCommissions = invoices
-    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start, end }))
+    .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType) && isWithinInterval(parseISO(i.date), { start, end }))
     .reduce((sum, i) => sum + (i.commissionAmount || 0), 0);
-    
+
   const prevTotalAgentCommissions = invoices
-    .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start: prevStart, end: prevEnd }))
+    .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType) && isWithinInterval(parseISO(i.date), { start: prevStart, end: prevEnd }))
     .reduce((sum, i) => sum + (i.commissionAmount || 0), 0);
 
   const netProfit = currentRevenue - totalExpenses - totalAgentCommissions;
@@ -160,7 +163,7 @@ export default function DashboardView() {
       const monthEnd = endOfMonth(month);
       
       const rev = invoices
-        .filter(i => i.status === 'Paid' && isWithinInterval(parseISO(i.date), { start: monthStart, end: monthEnd }))
+        .filter(i => i.status === 'Paid' && isAccountingDocument(i.documentType) && isWithinInterval(parseISO(i.date), { start: monthStart, end: monthEnd }))
         .reduce((sum, i) => sum + i.total, 0);
       
       const exp = expenses
