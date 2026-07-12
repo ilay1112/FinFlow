@@ -68,7 +68,7 @@ export default function LoginView() {
           <div className="bg-primary rounded-lg p-1.5">
             <CreditCard className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold text-slate-900 tracking-tight">FinFlow</span>
+          <span className="text-xl font-bold text-slate-900 tracking-tight">tbiz</span>
         </div>
         <div className="flex items-center gap-4">
           <LanguageSwitcher />
@@ -144,7 +144,7 @@ export default function LoginView() {
                      <div className="w-3 h-3 rounded-full bg-red-400"></div>
                      <div className="w-3 h-3 rounded-full bg-amber-400"></div>
                      <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                     <div className="ml-4 h-6 w-48 bg-white rounded border flex items-center px-2 text-[10px] text-slate-300">finflow.app/dashboard</div>
+                     <div className="ml-4 h-6 w-48 bg-white rounded border flex items-center px-2 text-[10px] text-slate-300">tbiz.co.il/dashboard</div>
                    </div>
                    <div className="p-6 space-y-6">
                       <div className="grid grid-cols-2 gap-4">
@@ -232,7 +232,7 @@ export default function LoginView() {
               <div className="bg-primary rounded-lg p-1">
                 <CreditCard className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="font-bold text-slate-900">FinFlow</span>
+              <span className="font-bold text-slate-900">tbiz</span>
               <span className="text-slate-400 text-sm ml-2">{t('login.footer_rights')}</span>
             </div>
             <div className="flex gap-8 text-sm font-bold text-slate-500">

@@ -16,7 +16,7 @@
     "feature_invoices_desc": "Professional Hebrew/English PDF invoicing. Send beautiful invoices that reflect your brand.",
     "feature_taxes_desc": "Stay ahead of tax season with real-time liability estimates and deductible tracking.",
     "drive_title": "Your Data, Your Drive.",
-    "drive_desc": "We don't store your sensitive financial data on our servers. FinFlow connects directly to your personal Google Drive storage. Total privacy, absolute control, and free for life.",
+    "drive_desc": "We don't store your sensitive financial data on our servers. tbiz connects directly to your personal Google Drive storage. Total privacy, absolute control, and free for life.",
     "connect_now": "Connect Now",
     "footer_rights": "© 2026 Open Source Project",
     "privacy": "Privacy",
@@ -366,6 +366,6 @@
     "delete_verify_label": "To confirm, type \"{{word}} {{name}}\" below:",
     "delete_verify_error": "The confirmation text does not match. Please try again.",
     "save_success": "Profile updated successfully",
-    "incomplete_error": "Please complete your business profile to continue using FinFlow."
+    "incomplete_error": "Please complete your business profile to continue using tbiz."
   }
 }

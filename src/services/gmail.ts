@@ -205,7 +205,7 @@ function buildHtmlBody(params: SendInvoiceEmailParams): string {
       </div>
 
       <div style="padding:16px 28px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;">
-        <p style="margin:0;color:#94a3b8;font-size:12px;">Sent via FinFlow &mdash; your business financial tool.</p>
+        <p style="margin:0;color:#94a3b8;font-size:12px;">Sent via tbiz &mdash; your business financial tool.</p>
       </div>
     </div>
   `;

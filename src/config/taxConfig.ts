@@ -79,7 +79,7 @@ const VAT_MONTHLY_FILING_THRESHOLD_TABLE: DatedValue<number>[] = [
 
 /**
  * Israeli Cash Law (חוק לצמצום השימוש במזומן) parameters for a transaction where one
- * side is a business (עוסק) — FinFlow's issuer is always an עוסק, so this rule governs
+ * side is a business (עוסק) — tbiz's issuer is always an עוסק, so this rule governs
  * every receipt the app issues. The cash cap is computed in
  * invoiceMath.cashCapForTotal: up to `flatCap` (the threshold) the whole deal may be
  * cash; above it the cap is the lower of `dealFraction * total` and `flatCap`.

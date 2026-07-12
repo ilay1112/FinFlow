@@ -91,7 +91,7 @@ export default function ExpensesView() {
   const [viewingReceipt, setViewingReceipt] = useState<Expense | null>(null);
   // Authenticated receipt preview state. Since F-1 made receipts owner-private, the
   // cookie-auth drive.google.com iframe fails for a browser whose default Google
-  // account differs from the FinFlow account. We download the bytes with the FinFlow
+  // account differs from the tbiz account. We download the bytes with the tbiz
   // token and render from a same-origin object URL instead (handles image + PDF).
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; isPdf: boolean } | null>(null);
   const [receiptPreviewLoading, setReceiptPreviewLoading] = useState(false);
@@ -642,7 +642,7 @@ export default function ExpensesView() {
               <>
                 {/*
                   F-1 follow-up: receipts are owner-private, so the bytes are fetched with
-                  the FinFlow access token (see effect above) and rendered from a same-origin
+                  the tbiz access token (see effect above) and rendered from a same-origin
                   object URL — a PDF in an iframe, an image in an <img>.
                 */}
                 {receiptPreviewLoading ? (

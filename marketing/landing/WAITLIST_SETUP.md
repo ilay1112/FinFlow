@@ -1,12 +1,12 @@
-# FinFlow Landing Page — Waitlist $0 Setup Guide
+# tbiz Landing Page — Waitlist $0 Setup Guide
 
 **File:** `marketing/landing/index.html`
 **Status:** DONE — wired to the owner's real Google Form. Design + a11y + seo + cost gates CLEAR
-(see TEAM_BOARD.md FF-MKT-1 thread). Endpoint is
+(see TEAM_BOARD.md FF-MKT-2 thread). Endpoint is
 `https://docs.google.com/forms/d/e/1FAIpQLSfyfeifgfQ9s6LtxHccgaLxKTZlPkCI16oFRZb_UxnzgWWwlQ/formResponse`
 and the email field is `entry.759788545` (both live in the form-submit handler in
 `marketing/landing/index.html`, currently around line 825–833). Verified with a Playwright-driven
-test submission against the local static server (2026-07-12) — see TEAM_BOARD.md FF-MKT-1 for
+test submission against the local static server (2026-07-12) — see TEAM_BOARD.md FF-MKT-2 for
 evidence. **Remaining step is the owner's, not dev's:** submit one real test entry on the live page
 and confirm it lands in the Form's Responses tab / linked Google Sheet (dev has no access to verify
 that last hop).
@@ -77,7 +77,7 @@ the waitlist succeeds (the whole point of running it). cost-validator's FF-MKT-1
 
 **Steps (if you choose this anyway):**
 1. Sign up at https://formspree.io
-2. Create a new form; select this domain (e.g., `finflow.co.il` or your Vercel domain)
+2. Create a new form; select this domain (e.g., `tbiz.co.il` or your Vercel domain)
 3. Copy your endpoint: `https://formspree.io/f/{PROJECT_ID}`
 4. In `marketing/landing/index.html`, replace the fetch call (currently around line 837) with:
 
@@ -170,7 +170,7 @@ Form/Sheet to confirm capture on the receiving end).
 ## Where the page is served (Vercel routing)
 
 `vercel.json` (repo root) now serves `marketing/landing/index.html` at the stable path
-**`/lp`** (e.g. `https://finflow.co.il/lp`), via a dedicated `@vercel/static` build + a `/lp` route
+**`/lp`** (e.g. `https://tbiz.co.il/lp`), via a dedicated `@vercel/static` build + a `/lp` route
 that's checked before the existing React SPA catch-all. The site root `/` and all other paths still
 go to the React app (`index.html` at repo root) exactly as before — the root path is already the
 React app's live entry point (auth/dashboard shell), so putting the marketing page there would have
@@ -209,7 +209,7 @@ broken it. Point any outbound waitlist links / ads / social bios at `/lp`, not `
 
 ## Privacy & Compliance Notes
 
-- No email data stored on FinFlow servers (all three options keep data with user or on free tier)
+- No email data stored on tbiz servers (all three options keep data with user or on free tier)
 - All forms are HTTPS (Google, Formspree, and Apps Script deployments use HTTPS by default)
 - Landing page has privacy note: "100% Privacy • No email sharing • Unsubscribe anytime"
 - Unsubscribe: Users can email or manually remove their row from the Sheet (Option C)

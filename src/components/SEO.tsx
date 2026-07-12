@@ -10,17 +10,18 @@ interface SEOProps {
 }
 
 export function SEO({
-  title = 'FinFlow | ניהול הוצאות לעוסק פטור והפקת קבלות דיגיטליות',
+  title = 'tbiz | ניהול הוצאות לעוסק פטור והפקת קבלות דיגיטליות',
   description = 'מערכת חכמה לניהול הוצאות לעוסק פטור, הפקת קבלות דיגיטליות ומעקב פיננסי לעסקים קטנים בישראל. הנתונים שלך נשמרים בטוחים ב-Google Drive.',
   type = 'website',
-  name = 'FinFlow',
+  name = 'tbiz',
   image = '/og-image.jpg',
-  url = 'https://finflow.app/'
+  url = 'https://tbiz.co.il/'
 }: SEOProps) {
   return (
     <Helmet>
       {/* Standard metadata tags */}
       <title>{title}</title>
+      <link rel='canonical' href={url} />
       <meta name='description' content={description} />
       
       {/* Open Graph tags (Facebook, LinkedIn, etc.) */}

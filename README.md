@@ -1,15 +1,15 @@
-# FinFlow 🚀
+# tbiz 🚀
 
-FinFlow is a professional, mobile-optimized financial management application designed for freelancers and small businesses. It combines the power of a modern accounting suite with the total privacy of your own **Google Drive**.
+tbiz is a professional, mobile-optimized financial management application designed for freelancers and small businesses. It combines the power of a modern accounting suite with the total privacy of your own **Google Drive**.
 
 ## 🛡️ Your Data, Your Drive
-FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accounting software, we do not store your sensitive financial data, client lists, or receipts on our servers. 
+tbiz is built on a **"Zero-Server" Privacy Model**. Unlike traditional accounting software, we do not store your sensitive financial data, client lists, or receipts on our servers. 
 
 ### How it Works:
-- **Direct Integration**: FinFlow connects directly from your browser to the Google Drive API.
-- **Private Storage**: All application data (`app_data.json`) and receipt files are stored in a secure, nested folder named `FinFlow Data` inside your personal Google Drive.
+- **Direct Integration**: tbiz connects directly from your browser to the Google Drive API.
+- **Private Storage**: All application data (`app_data.json`) and receipt files are stored in a secure, nested folder named `tbiz Data` inside your personal Google Drive.
 - **Total Control**: You own the storage. You can audit, move, or delete your data at any time through the standard Google Drive interface.
-- **Security**: Authentication is handled via Google OAuth 2.0 with restricted file-level permissions (`drive.file` scope). FinFlow can *only* access the files it creates.
+- **Security**: Authentication is handled via Google OAuth 2.0 with restricted file-level permissions (`drive.file` scope). tbiz can *only* access the files it creates.
 
 ## ✨ Key Features
 
@@ -68,7 +68,7 @@ FinFlow is built on a **"Zero-Server" Privacy Model**. Unlike traditional accoun
 4. Start the development server: `npm run dev`
 
 ### 📱 Native Mobile Setup (Android & iOS)
-FinFlow uses [CapacitorJS](https://capacitorjs.com/) and the [@capgo/capacitor-social-login](https://capgo.app/docs/plugins/social-login/) plugin for native Google Authentication.
+tbiz uses [CapacitorJS](https://capacitorjs.com/) and the [@capgo/capacitor-social-login](https://capgo.app/docs/plugins/social-login/) plugin for native Google Authentication.
 
 #### 1. Setup Auth
 Follow the [Capgo Social Login Setup Documentation](https://capgo.app/docs/plugins/social-login/) to configure your Native Android and iOS projects in the Google Cloud Console.

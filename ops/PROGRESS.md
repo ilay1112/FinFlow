@@ -6,25 +6,23 @@ session end (§3 clean-state contract); the Session log is append-only, one line
 
 ## Current handoff (overwrite at session end)
 
-- **Repo state:** `main @ 640ad05` (clean; 0 ahead/behind origin). Team docs now **versioned** on main
-  (TEAM_BOARD/ops/boards). `.claude/launch.json` left untracked; `.claude/worktrees/` gitignored.
-- **Health:** `npm run build` ✓ clean (bundle 474 KB gz) · `npm run lint` ✗ **132 errors** (pre-existing,
-  project-wide → FF-OPS-1). Init: `npm install && npm run dev` (Vite :5173).
-- **In flight / done:** Validation batch dispatched & gated 2026-07-12 (agent-team plugin agents).
-  - **FF-MKT-1 — DONE, SHIPPED to prod** at **/lp** (commit 640ad05). Privacy+free positioning; all gates
-    CLEAR (design/a11y, seo, cost); Google Forms waitlist wired + **capture confirmed by owner**.
-    `vercel.json` `builds`/`routes` verified working on the branch preview (main app unaffected).
-  - FF-PM-1 (`ops/research/FF-PM-1-competitor-scan.md`): **In Review** — deep-scanned **Sumit + EZcount**
-    (owner-named). Edge is thin; top gaps = ITA allocation-number automation + native mobile.
-  - FF-PM-2 (`ops/research/FF-PM-2-interview-kit.md`): kit ready; **owner must run the 10 interviews**.
-  - FF-PM-3 (`ops/research/FF-PM-3-pricing-hypothesis.md`): **cfo CLEAR**; favor 3-tier; confirm WTP in interviews.
-- **Positioning (owner, current):** lead with **privacy (data in user's own Google Drive) + free**; "in
-  Hebrew" is NOT the headline. Main competitors = Sumit + EZcount (both cloud → privacy is the real edge).
-- **Roster:** **agent-team plugin agents ONLY** — alex/john/shlomit/vadim dropped.
-- **Owner actions still open:**
-  1. Run the FF-PM-2 interviews (Validate-stage exit metric). 2. Revoke the old `ghp_…` GitHub token.
-- **Next (not auto-started — owner approves batches):** close FF-PM-1/PM-3 (In Review); FF-OPS-1 (132 lint
-  errors) still Next; consider a follow-up landing polish (og:image, FAQ/FAQPage) if desired.
+- **Repo state:** `main @ 8f1d32a` clean/synced. **Rebrand FinFlow→tbiz staged on branch
+  `feat/rebrand-tbiz`** (pushed for preview; NOT merged to main — awaiting owner live-drills + verify).
+- **Health:** `npm run build` ✓ clean (bundle 474 KB gz) · `npm run lint` ✗ 132 pre-existing (FF-OPS-1).
+  Init: `npm install && npm run dev` (Vite :5173).
+- **REBRAND FinFlow→tbiz (lowercase; domain tbiz.co.il) — all 5 tickets built + ALL GATES CLEAR:**
+  - FF-DATA-1 (`googleDrive.ts`): Drive folder `FinFlow Data`→`tbiz Data` via metadata-only rename
+    (`resolveRootFolderId`, 4 cases, idempotent). security+qa CLEAR on code. **Needs owner LIVE DRILL** (qa's 6-step plan).
+  - FF-WEB-3: app UI/SEO/i18n/email/package/README → tbiz. design+seo+security CLEAR.
+  - FF-MKT-2: landing page + domain→tbiz.co.il/lp. design+seo CLEAR.
+  - FF-AND-1: `capacitor.config.ts` → `com.tbiz.app`/tbiz (android/ gitignored, regen'd). **Needs owner Gradle build.**
+  - FF-INT-2: auth confirmed domain-clean; owner steps in `ops/REBRAND-owner-steps.md`.
+- **Prior batch (all DONE):** FF-MKT-1 shipped to /lp; FF-PM-1 (Sumit+EZcount), FF-PM-3 (pricing, cfo CLEAR) closed.
+- **Positioning:** lead with **privacy (data in user's own Google Drive) + free**; NOT "in Hebrew". Rivals Sumit+EZcount (both cloud → privacy is the edge).
+- **Roster:** agent-team plugin agents ONLY.
+- **Owner actions before the rebrand can merge to prod (see `ops/REBRAND-owner-steps.md`):**
+  1. **Verify the `feat/rebrand-tbiz` Vercel preview.** 2. **Run the Drive migration live-drill** on a test account (qa's plan on the board FF-DATA-1 thread). 3. **Android Gradle build** to confirm `com.tbiz.app` compiles. 4. **Vercel:** connect tbiz.co.il + DNS. 5. **Google Cloud:** add tbiz.co.il OAuth origins/redirects + register Android `com.tbiz.app`+SHA-1 + rename consent screen. Cutover order matters (register FIRST, deploy second).
+- **Still open (unchanged):** run FF-PM-2 interviews; revoke old `ghp_…` token. FF-OPS-1 (132 lint) still Next.
 
 ## Session log (append-only, newest last)
 
@@ -33,3 +31,4 @@ session end (§3 clean-state contract); the Session log is append-only, one line
 | 2026-07-12 | orchestrator · initializer | v1.2.0 intake; PRODUCT/ROADMAP/COSTS + PROGRESS + boards; stage=Validate; health check; shipped FF-WEB-002 (notes); repo catch-up + auth hygiene | First batch (FF-PM-1/PM-2/MKT-1/PM-3) awaiting owner approval; restart pending |
 | 2026-07-12 | orchestrator · dispatch | Ran validation batch via agent-team agents: FF-MKT-1 built + gated CLEAR (design/a11y, seo, cost); FF-PM-1/2/3 delivered; cfo CLEAR on FF-PM-3 | FF-MKT-1 pre-deploy follow-ups (vercel routing, copy, waitlist wiring); owner to name competitor + run interviews |
 | 2026-07-12 | orchestrator · ship | Iterated FF-MKT-1 (privacy+free reposition, Hebrew fixes, dark-mode fix, Google Form wired, section removed); SEO re-gate CLEAR; committed team docs + landing; **merged to main & shipped /lp to prod** (640ad05); FF-PM-1 deep scan (Sumit+EZcount) | FF-MKT-1 DONE. Owner to run FF-PM-2 interviews; FF-PM-1/PM-3 In Review; revoke old token |
+| 2026-07-12 | orchestrator · rebrand | FinFlow→tbiz full sweep via agent-team agents (FF-DATA-1 Drive migration, FF-WEB-3 app, FF-MKT-2 landing, FF-AND-1 Android, FF-INT-2 auth/owner-doc); all gates CLEAR (design/security/qa/seo); staged on `feat/rebrand-tbiz` for preview | NOT merged — owner must run Drive live-drill + Android build + Vercel/Google Cloud setup, then verify preview before prod merge |

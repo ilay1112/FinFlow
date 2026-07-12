@@ -2,7 +2,12 @@ import type { Expense, Client, Invoice, BusinessSettings, BookingAgent } from '.
 import { normalizeAppState } from '../utils/appStateSchema';
 import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 
-const ROOT_FOLDER_NAME = 'FinFlow Data';
+const ROOT_FOLDER_NAME = 'tbiz Data';
+// FF-DATA-1 — pre-rebrand folder name. Existing users' Drive data still lives
+// under this name; resolveRootFolderId() migrates it to ROOT_FOLDER_NAME (a
+// metadata-only rename, id/children preserved) the first time they load after
+// the rebrand. Never remove this without confirming no live folder still uses it.
+const LEGACY_ROOT_FOLDER_NAME = 'FinFlow Data';
 const APP_DATA_FILENAME = 'app_data.json';
 const RECEIPTS_FOLDER_NAME = 'Business App Receipts';
 const INVOICES_FOLDER_NAME = 'Invoices';
@@ -131,14 +136,80 @@ async function createFile(token: string, name: string, content: AppState | null 
 }
 
 /**
- * Lists all business folders inside the root FinFlow Data folder.
+ * Renames a file/folder in place via a metadata-only Drive `files.update` PATCH.
+ * Only the `name` field is sent — the file's id, parents, and (for a folder) every
+ * child stay exactly where they are. Used to migrate a user's legacy root folder to
+ * the new name without creating, moving, copying, or deleting anything.
+ */
+async function renameFile(token: string, fileId: string, newName: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: newName }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Drive API Rename Error:', response.status, errorData);
+    throw new Error(`Drive API Rename Failed: ${response.status} ${errorData.error?.message || ''}`);
+  }
+}
+
+/**
+ * FF-DATA-1 — Finds, migrates, or creates the user's root data folder.
+ *
+ * Resolution order (all lookups scoped to this Drive account, via the app's
+ * `drive.file` grant):
+ *   1. `'tbiz Data'` exists -> already migrated (or a fresh account past its
+ *      first run) -> use it as-is.
+ *   2. Else legacy `'FinFlow Data'` exists -> RENAME it in place to `'tbiz Data'`
+ *      via `renameFile` (metadata-only `files.update` PATCH of the `name` field).
+ *      The folder's id and every invoice/expense/receipt file nested inside it
+ *      are left exactly where they are — nothing is created, moved, copied, or
+ *      deleted. Then use it.
+ *   3. Else (brand-new user) -> create a fresh `'tbiz Data'` folder.
+ *
+ * Edge case (both exist): if a prior migration ran partway (e.g. the app was
+ * closed mid-run) so BOTH `'tbiz Data'` and legacy `'FinFlow Data'` are present,
+ * we prefer `'tbiz Data'`, leave the legacy folder completely untouched, and
+ * console.warn so it can be reconciled by hand. We never merge or delete either
+ * folder automatically — data safety over tidiness.
+ */
+async function resolveRootFolderId(token: string): Promise<string> {
+  const tbizId = await findFileId(token, ROOT_FOLDER_NAME, true);
+  const legacyId = await findFileId(token, LEGACY_ROOT_FOLDER_NAME, true);
+
+  if (tbizId && legacyId) {
+    console.warn(
+      `FF-DATA-1: both '${ROOT_FOLDER_NAME}' (id: ${tbizId}) and legacy ` +
+      `'${LEGACY_ROOT_FOLDER_NAME}' (id: ${legacyId}) folders exist in this Drive ` +
+      `account. Using '${ROOT_FOLDER_NAME}'; the legacy folder was left untouched. ` +
+      `Reconcile manually if it still holds data that should be merged.`
+    );
+    return tbizId;
+  }
+
+  if (tbizId) {
+    return tbizId;
+  }
+
+  if (legacyId) {
+    await renameFile(token, legacyId, ROOT_FOLDER_NAME);
+    return legacyId;
+  }
+
+  return createFile(token, ROOT_FOLDER_NAME, null, true);
+}
+
+/**
+ * Lists all business folders inside the root tbiz Data folder (migrating the
+ * legacy FinFlow Data folder in place on first run — see resolveRootFolderId).
  */
 export async function listBusinesses(token: string): Promise<BusinessFolder[]> {
-  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
-  if (!rootId) {
-    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
-    return [];
-  }
+  const rootId = await resolveRootFolderId(token);
 
   const q = `trashed = false and '${rootId}' in parents and mimeType = 'application/vnd.google-apps.folder'`;
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
@@ -151,15 +222,14 @@ export async function listBusinesses(token: string): Promise<BusinessFolder[]> {
 }
 
 /**
- * Scans user's Drive for FinFlow Data -> [Business Folder] -> app_data.json. 
- * Returns fileId and businessFolderId. Creates them if they don't exist.
+ * Scans user's Drive for tbiz Data -> [Business Folder] -> app_data.json
+ * (migrating the legacy FinFlow Data folder in place on first run — see
+ * resolveRootFolderId). Returns fileId and businessFolderId. Creates them if
+ * they don't exist.
  */
 export async function initAppState(token: string, businessName: string): Promise<{ fileId: string; folderId: string }> {
-  // 1. Find or create root folder
-  let rootId = await findFileId(token, ROOT_FOLDER_NAME, true);
-  if (!rootId) {
-    rootId = await createFile(token, ROOT_FOLDER_NAME, null, true);
-  }
+  // 1. Find, migrate, or create root folder
+  const rootId = await resolveRootFolderId(token);
 
   // 2. Find or create business folder
   let businessFolderId = await findFileId(token, businessName, true, rootId);
@@ -195,7 +265,7 @@ export async function fetchAppState(token: string, fileId: string): Promise<AppS
  * F-1 follow-up — downloads an arbitrary Drive file's raw bytes as a Blob using an
  * authenticated `alt=media` request. Receipts are owner-private (no public-read
  * permission), so the browser's cookie-auth `drive.google.com` preview fails when the
- * default Google account differs from the FinFlow account. Fetching with the FinFlow
+ * default Google account differs from the app's connected account. Fetching with that
  * access token sidesteps that and works for both image and PDF receipts; the caller
  * renders the resulting Blob via an object URL. The Blob carries Drive's reported
  * Content-Type so the consumer can branch on image/PDF.

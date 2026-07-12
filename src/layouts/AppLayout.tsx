@@ -163,7 +163,7 @@ export function AppLayout() {
                 <div className="flex flex-col overflow-hidden">
                   <span className="text-xs text-slate-500 uppercase font-bold tracking-wider leading-none mb-1">{t('common.workspace')}</span>
                   <span className="text-sm font-bold text-slate-900 tracking-tight truncate leading-none">
-                    {activeBusiness ? activeBusiness.name : 'FinFlow'}
+                    {activeBusiness ? activeBusiness.name : 'tbiz'}
                   </span>
                 </div>
               </div>
@@ -389,12 +389,12 @@ export function AppLayout() {
             <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-500">
               <span>{t('common.workspace')}</span>
               <span className="text-slate-300">/</span>
-              <span className="text-slate-900">{activeBusiness ? activeBusiness.name : 'FinFlow'}</span>
+              <span className="text-slate-900">{activeBusiness ? activeBusiness.name : 'tbiz'}</span>
             </div>
           </div>
           
           <div className="flex-1 md:hidden text-center font-bold text-xl">
-            {activeBusiness ? activeBusiness.name : 'FinFlow'}
+            {activeBusiness ? activeBusiness.name : 'tbiz'}
           </div>
 
           <div className="flex items-center gap-4">

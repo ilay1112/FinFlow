@@ -13,7 +13,7 @@ export default function TermsPage() {
           <div className="bg-primary rounded-lg p-1.5">
             <CreditCard className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold text-slate-900 tracking-tight">FinFlow</span>
+          <span className="text-xl font-bold text-slate-900 tracking-tight">tbiz</span>
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-2 text-slate-500">
           <ArrowLeft className="h-4 w-4" /> Back
@@ -38,7 +38,7 @@ export default function TermsPage() {
           <div className="space-y-5 text-slate-600 leading-relaxed">
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">Free to Use</h3>
-              <p>FinFlow is an open-source freeware project. It is 100% free to use for personal and commercial business purposes without any subscription fees, now and in the future.</p>
+              <p>tbiz is an open-source freeware project. It is 100% free to use for personal and commercial business purposes without any subscription fees, now and in the future.</p>
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">No Warranty</h3>
@@ -50,7 +50,7 @@ export default function TermsPage() {
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">Tax & Financial Advice</h3>
-              <p>FinFlow provides simplified tax estimates for informational purposes only. It does not constitute professional tax or financial advice. Always consult a licensed accountant or tax professional for official filings.</p>
+              <p>tbiz provides simplified tax estimates for informational purposes only. It does not constitute professional tax or financial advice. Always consult a licensed accountant or tax professional for official filings.</p>
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">Open Source</h3>
@@ -66,7 +66,7 @@ export default function TermsPage() {
           <div className="space-y-5 text-slate-600 leading-relaxed">
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">חופשי לשימוש</h3>
-              <p>FinFlow הוא פרויקט קוד פתוח (freeware). הוא חופשי לשימוש ב-100% למטרות אישיות ועסקיות מסחריות ללא כל דמי מנוי, עכשיו ובעתיד.</p>
+              <p>tbiz הוא פרויקט קוד פתוח (freeware). הוא חופשי לשימוש ב-100% למטרות אישיות ועסקיות מסחריות ללא כל דמי מנוי, עכשיו ובעתיד.</p>
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">העדר אחריות</h3>
@@ -78,7 +78,7 @@ export default function TermsPage() {
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">ייעוץ מס וכספי</h3>
-              <p>FinFlow מספקת הערכות מס מפושטות למטרות מידע בלבד. היא אינה מהווה ייעוץ מס או פיננסי מקצועי. יש להתייעץ תמיד עם רואה חשבון מוסמך לגבי דיווחים רשמיים.</p>
+              <p>tbiz מספקת הערכות מס מפושטות למטרות מידע בלבד. היא אינה מהווה ייעוץ מס או פיננסי מקצועי. יש להתייעץ תמיד עם רואה חשבון מוסמך לגבי דיווחים רשמיים.</p>
             </div>
             <div className="space-y-2">
               <h3 className="font-bold text-slate-900">קוד פתוח</h3>

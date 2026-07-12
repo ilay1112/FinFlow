@@ -26,7 +26,7 @@ const Loading = () => (
   <div className="h-screen w-full flex items-center justify-center bg-slate-50">
     <div className="flex flex-col items-center gap-4">
       <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-slate-500 font-medium animate-pulse text-sm uppercase tracking-widest">FinFlow Loading...</p>
+      <p className="text-slate-500 font-medium animate-pulse text-sm uppercase tracking-widest">tbiz Loading...</p>
     </div>
   </div>
 );
