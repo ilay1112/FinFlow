@@ -42,6 +42,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-MKT-1    | Landing page + waitlist (demand signal)        | marketing       | web-developer, design, seo  | **Done** — shipped to prod at /lp (commit 640ad05); all gates CLEAR; waitlist capture confirmed by owner in Form Responses |
 | FF-PM-3     | Pricing hypothesis + willingness-to-pay        | product-manager | cfo                         | **Done** — hypothesis delivered (`ops/research/FF-PM-3-pricing-hypothesis.md`); cfo CLEAR; WTP to be tested in FF-PM-2 interviews |
 | FF-OPS-1    | Triage 132 project-wide lint errors            | web-developer   | qa                          | Backlog (Next — not in validation batch) |
+| FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
 | FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | **Done** — all gates CLEAR; shipped (e82422b) |
@@ -57,6 +58,46 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-DATA-2 — Report: app_data.json scaling — load time, big-JSON handling for real-time data
+
+#### [HANDOFF] backend-platform → team · 2026-07-13
+**Ticket:** FF-DATA-2
+Read-only report, no code changed. Grounded read of `src/services/googleDrive.ts` (full),
+`src/context/FinanceContext.tsx` (full), `src/utils/appStateSchema.ts` (full), and
+`ARCHITECTURE.md` §6/§7. **Current model:** one monolithic `app_data.json` per business (already
+correctly sharded by business, not by size — `googleDrive.ts:230-247`); full download → `JSON.parse`
+→ `normalizeAppState` (full recursive rebuild, `appStateSchema.ts:286-298`) on every load/business
+switch, and **any single-field edit to any entity re-uploads the entire file** after a 1s debounce
+(`FinanceContext.tsx:598-646` → `saveAppState`, `googleDrive.ts:289-301` — no diffing anywhere in
+the pipeline). Sized realistic synthetic records (shaped exactly like `Invoice`/`Expense`/`Client`)
+via `node`/`JSON.stringify`/`zlib.gzipSync`: ~600–900 B/invoice, ~420–500 B/expense, ~195–230
+B/client raw; an 800-invoice/1200-expense/300-client dataset (~2–3 years for a busy Osek Murshe)
+measured **~1.06 MB raw, ~181 KB gzipped (17%)**. Top 3 risks as it grows: (1) write amplification —
+a 5 KB edit costs a full-file upload every time, unbounded; (2) load-time growth — download+parse+
+normalize all scale with size and rerun on every business switch, not just boot; (3) wider
+optimistic-concurrency conflict window — bigger files slow each conflict-retry round-trip in
+`saveAppStateGuarded` (`googleDrive.ts:372-399`, capped at 4 attempts). Evaluated 7 options
+(entity-level splitting, year-sharding, delta/append-log, pagination/lazy-load, IndexedDB local
+cache, gzip, batched shard writes) against whether they preserve the existing optimistic-concurrency
++ union-merge model — full tradeoff table in the report.
+**Recommendation:** phased, $0-cap, no new vendor — **FF-DATA-3** gzip compression on the
+read/write path first (~83% size cut measured, 2 call sites, zero risk to the merge model, S/1–2
+days) → **FF-DATA-4** entity-level file splitting (`invoices.json`/`expenses.json`/`clients.json`/
+`settings.json` per business folder — the actual fix for write amplification; requires adding
+per-collection dirty-tracking to the save effect, which today has no notion of which entity
+changed; M/3–5 days) → **FF-DATA-5** IndexedDB local mirror to replace the 6 full-`JSON.stringify`
+`localStorage` writes on every edit (M/3–4 days) → deferred FF-DATA-6/7 (year-sharding, pagination)
+only if a post-Phase-2 entity file crosses ~1–2 MB; not recommending an append-only delta log for
+this codebase (replay/compaction complexity not justified vs. entity splitting for a financial
+record store that must never corrupt).
+**Evidence:** `ops/research/FF-DATA-2-app_data-scaling.md` (full report, cites `path:line` for every
+current-model claim); size/gzip figures computed via `node -e` runs against synthetic records
+matching the real TypeScript shapes (not estimated by inspection).
+**Status:** OPEN — @orchestrator/@product-manager to ticket FF-DATA-3/4/5 into the backlog when
+prioritized; no urgency signal in current usage (§2 projects ~500 KB at 14–16 months, ~1 MB at
+2.5–3 years for an active account) but Phase 1 (gzip) is cheap enough to fold into any nearby
+backend batch.
 
 ### FF-WEB-3 — Rebrand: app UI / SEO / email footer / package / README → tbiz
 
