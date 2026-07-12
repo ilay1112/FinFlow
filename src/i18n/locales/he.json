@@ -203,6 +203,8 @@
     "choose_client": "בחר לקוח...",
     "issue_date": "תאריך הפקה",
     "due_date": "תאריך לתשלום",
+    "notes": "הערות",
+    "notes_placeholder": "הערה שתוצג על המסמך (למשל תנאי תשלום, הערת תודה)...",
     "line_items": "פריטים",
     "add_item": "הוסף פריט",
     "item_description": "תיאור פריט",

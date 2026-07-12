@@ -210,6 +210,12 @@ export interface Invoice {
    * quote→payment paper trail. Absent on documents created directly.
    */
   sourceInvoiceId?: string;
+  /**
+   * Free-text note entered by the issuer (e.g. payment terms, a thank-you line).
+   * Optional and purely informational — rendered on the PDF when present. Trimmed
+   * empty strings are stored as undefined.
+   */
+  notes?: string;
 }
 
 interface FinanceContextType {

@@ -203,6 +203,8 @@
     "choose_client": "Choose a client...",
     "issue_date": "Issue Date",
     "due_date": "Due Date",
+    "notes": "Notes",
+    "notes_placeholder": "Optional note shown on the document (e.g. payment terms, a thank-you line)...",
     "line_items": "Line Items",
     "add_item": "Add Item",
     "item_description": "Item Description",

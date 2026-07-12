@@ -46,6 +46,7 @@ interface InvoiceFormData {
   status: Invoice['status'];
   allocationNumber: string;
   vatTreatment: VatTreatment;
+  notes: string;
 }
 
 /** Maps an existing invoice's payment lines (or legacy method) into editable drafts. */
@@ -121,6 +122,7 @@ export default function InvoiceFormPage() {
         status: editingInvoice.status,
         allocationNumber: editingInvoice.allocationNumber ?? '',
         vatTreatment: editingInvoice.vatTreatment ?? 'standard',
+        notes: editingInvoice.notes ?? '',
       };
     }
     if (sourceInvoice) {
@@ -142,6 +144,7 @@ export default function InvoiceFormPage() {
         status: 'Paid',
         allocationNumber: '',
         vatTreatment: sourceInvoice.vatTreatment ?? 'standard',
+        notes: sourceInvoice.notes ?? '',
       };
     }
     return {
@@ -157,6 +160,7 @@ export default function InvoiceFormPage() {
       status: 'Paid',
       allocationNumber: '',
       vatTreatment: 'standard',
+      notes: '',
     };
   });
 
@@ -361,6 +365,8 @@ export default function InvoiceFormPage() {
       // (0% by exemption, not by zero-rating), so only persist a non-standard
       // treatment for a VAT-registered business.
       vatTreatment: isPatur ? 'standard' : formData.vatTreatment,
+      // Optional free-text note; a trimmed empty string is stored as undefined.
+      notes: formData.notes.trim() || undefined,
       // Link back to the source חשבון עסקה when this document is created from one, so
       // the source can be shown as נפרע/settled. Only on create-from-source — never
       // add it on a plain edit (that would clobber an existing link).
@@ -784,6 +790,17 @@ export default function InvoiceFormPage() {
               <span>{t('common.total')}</span>
               <span className="text-primary">{formatCurrency(total)}</span>
             </div>
+          </div>
+
+          {/* Notes (optional free text, shown on the PDF) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.notes')}</label>
+            <textarea
+              className="flex min-h-[88px] w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+              placeholder={t('invoices.notes_placeholder')}
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            />
           </div>
 
           {/* Bottom padding so sticky footer doesn't cover content */}

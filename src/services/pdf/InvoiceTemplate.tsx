@@ -176,6 +176,14 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, busin
         </div>
       </div>
 
+      {/* Notes — optional free text from the issuer. Preserves the user's line breaks. */}
+      {invoice.notes && (
+        <div className="mt-12 text-start">
+          <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">{t('invoices.notes')}</p>
+          <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{invoice.notes}</p>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="absolute bottom-16 left-16 right-16 text-center border-t pt-8">
         {business.type === 'EsekPatur' && (

@@ -240,6 +240,7 @@ function normalizeInvoice(raw: unknown): Invoice | null {
     vatTreatment: oneOfOptional(raw.vatTreatment, VAT_TREATMENTS),
     sourceInvoiceId: toOptionalStr(raw.sourceInvoiceId),
     createdAt: toOptionalStr(raw.createdAt),
+    notes: toOptionalStr(raw.notes),
   };
 }
 
