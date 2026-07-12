@@ -43,11 +43,11 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-PM-3     | Pricing hypothesis + willingness-to-pay        | product-manager | cfo                         | **Done** — hypothesis delivered (`ops/research/FF-PM-3-pricing-hypothesis.md`); cfo CLEAR; WTP to be tested in FF-PM-2 interviews |
 | FF-OPS-1    | Triage 132 project-wide lint errors            | web-developer   | qa                          | Backlog (Next — not in validation batch) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
-| FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | **security, qa (blocking)** | In Validation |
-| FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | In Review |
-| FF-MKT-2    | Rebrand: landing page + domain (`finflow.co.il`→`tbiz.co.il`) → tbiz | marketing | design, seo | In Review — seo CLEAR, design pending |
-| FF-AND-1    | Rebrand: Android appId/package/appName → `com.tbiz.app` / tbiz | android-developer | qa, security | In Review |
-| FF-INT-2    | Rebrand: OAuth/domain verify on tbiz.co.il + owner Google Cloud steps | web-developer | security (blocking) | Ready |
+| FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
+| FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | **Done** — all gates CLEAR; shipped (e82422b) |
+| FF-MKT-2    | Rebrand: landing page + domain (`finflow.co.il`→`tbiz.co.il`) → tbiz | marketing | design, seo | **Done** — gates CLEAR; shipped (e82422b) |
+| FF-AND-1    | Rebrand: Android appId/package/appName → `com.tbiz.app` / tbiz | android-developer | qa, security | **Done** — gates CLEAR; owner confirmed Gradle build; shipped (e82422b) |
+| FF-INT-2    | Rebrand: OAuth/domain verify on tbiz.co.il + owner Google Cloud steps | web-developer | security | **Done** — auth domain-clean; owner-steps doc delivered; shipped (e82422b) |
 
 Pre-cutover history (FF-INT-001, automatic token renewal + session-expired modal) lives on the vault
 reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Gaps & Roadmap).
