@@ -39,7 +39,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 |-------------|------------------------------------------------|-----------------|-----------------------------|--------|
 | FF-PM-1     | Competitor scan — name & analyze main Israeli rival | product-manager | qa                     | In Review |
 | FF-PM-2     | Problem interviews — 10 Israeli freelancers    | product-manager | —                           | In Review (owner action) |
-| FF-MKT-1    | Landing page + waitlist (demand signal)        | marketing       | web-developer, design, seo  | In Validation — waitlist wired to owner's real Google Form + browser-verified (endpoint/entry ID correct); owner must submit one live test and confirm capture in Form Responses/Sheet |
+| FF-MKT-1    | Landing page + waitlist (demand signal)        | marketing       | web-developer, design, seo  | **Done** — shipped to prod at /lp (commit 640ad05); all gates CLEAR; waitlist capture confirmed by owner in Form Responses |
 | FF-PM-3     | Pricing hypothesis + willingness-to-pay        | product-manager | cfo                         | In Review — cfo CLEAR (WTP to confirm in interviews) |
 | FF-OPS-1    | Triage 132 project-wide lint errors            | web-developer   | qa                          | Backlog (Next — not in validation batch) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
