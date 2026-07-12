@@ -31,3 +31,4 @@ ios/
 
 # AI tool configs
 .gemini/
+.claude/worktrees/
