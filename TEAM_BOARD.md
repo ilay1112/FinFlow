@@ -43,6 +43,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-PM-3     | Pricing hypothesis + willingness-to-pay        | product-manager | cfo                         | **Done** — hypothesis delivered (`ops/research/FF-PM-3-pricing-hypothesis.md`); cfo CLEAR; WTP to be tested in FF-PM-2 interviews |
 | FF-OPS-1    | Triage 132 project-wide lint errors            | web-developer   | qa                          | Backlog (Next — not in validation batch) |
 | FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
+| FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | **security, qa (blocking)** | Ready — design spec delivered (`ops/research/FF-DATA-4-entity-split-spec.md`), awaiting web-developer implementation |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
 | FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | **Done** — all gates CLEAR; shipped (e82422b) |
@@ -58,6 +59,103 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-DATA-4 — Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 folded in)
+
+#### [HANDOFF] backend-platform → @web-developer, @security-validator, @qa-validator · 2026-07-13
+**Ticket:** FF-DATA-4
+Design/spec-only deliverable — no product code changed this session. Re-read (full files, this
+session) `src/services/googleDrive.ts`, `src/context/FinanceContext.tsx`, `src/utils/appStateSchema.ts`,
+`ARCHITECTURE.md` §6-7, and FF-DATA-2's report before writing the spec. Full implementation-ready
+spec at `ops/research/FF-DATA-4-entity-split-spec.md`.
+
+**File layout (per business folder):** `manifest.json.gz` (schemaVersion, businessSettings incl.
+`docCounters`, categories, a `shards` index of `{fileId, version, recordCount, updatedAt}` per
+entity) + `invoices.json.gz` / `expenses.json.gz` / `clients.json.gz` / `bookingAgents.json.gz`, plus
+the legacy `app_data.json` kept untouched as a permanent backup. Gzip via native
+`CompressionStream`/`DecompressionStream` (no new dependency, $0/mo cap respected;
+Chromium/Android-WebView + Safari 16.4+/iOS 16.4+ WKWebView covered; feature-detected fallback to
+plain JSON + format-sniff-on-read so mixed compressed/uncompressed files across browser versions
+never break a load).
+
+**Dirty-tracking + partial save:** keep the existing single 1s-debounced effect
+(`FinanceContext.tsx:598-646`) but add per-collection "last-seen" refs; compare by reference (every
+mutator already produces a new array/object, confirmed by reading all of `FinanceContext.tsx:717-1038`)
+to accumulate a `dirtyShardsRef` set across the debounce window. Only dirty shards get re-uploaded —
+an edit to one expense re-uploads `expenses.json.gz` + `manifest.json.gz` only, not
+invoices/clients/bookingAgents. `docCounters` living in the manifest means the manifest is dirty on
+almost every invoice creation too — expected, and still cheap since it's tiny.
+
+**Per-shard optimistic concurrency:** each shard + the manifest gets its own Drive `version` token
+(reusing the existing `getFileVersion`/`mergeById` helpers, `googleDrive.ts:307-322`, unchanged, just
+called per-file). Entity shards flush in parallel (no cross-shard invariants — the one cross-cutting
+invariant, gapless `docCounters`, lives entirely in the manifest). **The manifest is always written
+last**, after all attempted entity-shard writes resolve, so it never points at a shard version that
+doesn't actually exist — this is also the mechanism that keeps the manifest trustworthy as the
+"what's actually synced" anchor. `hasUnsyncedChanges` stays the same public boolean; internally it's
+now backed by a persisted **set** of still-dirty shard names (new `finance_pending_shards`
+localStorage key) instead of one flag, so a crash mid-partial-save resumes precisely instead of
+re-flushing everything.
+
+**Migration ordering (the data-safety heart, modeled directly on FF-DATA-1's
+`resolveRootFolderId` precedent, `googleDrive.ts:181-205`):**
+1. Detect: no manifest, legacy `app_data.json` present.
+2. **Claim** — create the manifest first with `migration.status: 'in_progress'`; immediately
+   re-list by name — if a duplicate is found (concurrent-migration race), self-delete and abort,
+   deferring to the winning device.
+3. Write shards **one at a time, fixed order** (invoices → expenses → clients → bookingAgents),
+   PATCHing the manifest's shard index after **each** one succeeds — so an interruption after shard
+   N leaves an accurate, resumable record of exactly what's done.
+4. **Verify** every shard's content read-back (counts + spot-check ids) against the legacy source
+   before advancing.
+5. **Finalize** — only once all four verify clean, flip `migration.status: 'complete'` in one final
+   manifest PATCH (the commit point).
+6. **Never delete or modify `app_data.json`** — kept permanently as a backup (optional rename to
+   `app_data.legacy.json` is a separate, later, non-critical-path ticket).
+Resumable: re-entering the migration on any load skips already-verified shards and only creates
+what's missing. Rollback: redeploy the pre-migration build — it only ever looks up `app_data.json`
+by exact name, so the intact legacy file works unmodified; known accepted limitation (documented,
+same class FF-DATA-1 already accepted) — edits made *after* migration under the new format aren't
+visible to a rolled-back old build without manual reconciliation.
+
+**Also in the spec:** `schemaVersion` is a **new** concept (neither `AppState` nor
+`appStateSchema.ts` has any version field today — confirmed by full read); `normalizeAppState`
+becomes a thin composing wrapper over newly-exported per-collection normalizers + a new
+`normalizeManifest`, so every existing caller keeps working unchanged. Backward/forward compat: old
+builds simply don't see the new files (exact-name lookup); the real gap is **old-build-writes-stale-
+legacy-file-after-a-new-build-has-migrated-and-edited** — flagged as a DECISION for
+orchestrator/owner (dual-write grace-period mirror vs. tight cross-platform launch sequencing per
+`ops/PRODUCT.md`'s Web-first/Android-next/iOS-later order), not silently assumed either way.
+
+**Implementation sub-tickets for @web-developer (ordered):** FF-DATA-4a (gzip transport helper,
+folds in FF-DATA-3) → FF-DATA-4b (`googleDrive.ts` shard/manifest types + I/O, whole-blob functions
+kept unchanged for the migration/rollback path) → FF-DATA-4c (`appStateSchema.ts` per-collection
+normalizer exports + `normalizeManifest`) → FF-DATA-4d (`migrateLegacyToShards()`, the ordering
+above) → FF-DATA-4e (`FinanceContext.tsx` dirty-tracking + per-shard save, preserving every existing
+invariant: logout flush-before-wipe, reconnect effect, backoff retry, `justLoadedRef` gate) →
+FF-DATA-4f (dual-write compat mirror, gated on an explicit go/no-go, not built silently).
+
+**QA live-drill plan (mirrors FF-DATA-1's style) — full detail in the spec §7.2:** pre-state (synthetic
+account w/ edge-case records) → migrate → verify integrity+IDs → idempotent re-run → simulated
+partial-interruption → concurrent-migration race → rollback → dirty-save granularity check (only the
+touched shard's `modifiedTime` changes) → per-shard conflict/merge (different shards concurrently,
+then same shard concurrently).
+
+**Security review points — full detail in the spec §7.3:** untrusted-input posture on every new
+normalizer (incl. validating `shards.<name>.fileId` shape before use in a fetch URL), no new Drive
+scope/no new public-permission grants, decompression sanity-bound as defense-in-depth, the
+claim-manifest race-mitigation's DoS assumption documented explicitly, no PII/token leakage in new
+logging, and a security pass on the dual-write mitigation if approved.
+
+**Evidence:** Full re-read this session of `src/services/googleDrive.ts`, `src/context/
+FinanceContext.tsx`, `src/utils/appStateSchema.ts`, `ARCHITECTURE.md` §6-7,
+`ops/research/FF-DATA-2-app_data-scaling.md`, `ops/PRODUCT.md` — every nontrivial design decision
+above cites the exact `path:line` it's grounded in inside the spec file itself. No code changed; no
+git commit made.
+**Status:** OPEN — @web-developer: implement per the ordered sub-tickets in the spec §7.1.
+@security-validator + @qa-validator: gate before merge per the Ticket Index (blocking). ARCHITECTURE.md
+§6-7/§13 need updating after this ships (spec §8 lists the exact sections) — not done in this
+session, flagging for whoever owns doc upkeep post-implementation.
 
 ### FF-DATA-2 — Report: app_data.json scaling — load time, big-JSON handling for real-time data
 
