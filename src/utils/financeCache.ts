@@ -21,6 +21,11 @@ export const FINANCE_CACHE_KEYS = [
   // the data above, so it must be purged on the same logout/account-switch wipe —
   // a stale dirty flag against another user's (now-cleared) data is meaningless.
   'finance_pending_save',
+  // FF-DATA-4e — durable set of still-dirty SHARD names (subset of
+  // 'manifest'/'invoices'/'expenses'/'clients'/'bookingAgents'), backing
+  // hasUnsyncedChanges with per-shard precision. Same purge lifecycle as the
+  // boolean flag above.
+  'finance_pending_shards',
 ] as const;
 
 /**
@@ -30,6 +35,15 @@ export const FINANCE_CACHE_KEYS = [
  * data is ahead of Drive and must be flushed rather than overwritten.
  */
 export const FINANCE_PENDING_SAVE_KEY = 'finance_pending_save';
+
+/**
+ * FF-DATA-4e — localStorage key carrying the durable SET of still-dirty shard
+ * names (JSON array, e.g. `["expenses","manifest"]`), so a reload after a crash
+ * mid-partial-save knows exactly which shards still need pushing instead of
+ * having to treat "everything" as dirty. `FINANCE_PENDING_SAVE_KEY` above stays
+ * the single UI-facing boolean (`true` iff this set is non-empty).
+ */
+export const FINANCE_PENDING_SHARDS_KEY = 'finance_pending_shards';
 
 /** Removes every cached `finance_*` key from localStorage. Safe to call repeatedly. */
 export function clearFinanceCache(): void {

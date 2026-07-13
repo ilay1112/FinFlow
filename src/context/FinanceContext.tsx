@@ -13,8 +13,37 @@ import {
 import { getCashLimit } from '../config/taxConfig';
 import { DEFAULT_BUSINESS_SETTINGS, DEFAULT_CATEGORIES } from '../config/defaults';
 import { normalizeAppState } from '../utils/appStateSchema';
-import { clearFinanceCache, FINANCE_PENDING_SAVE_KEY } from '../utils/financeCache';
+import { clearFinanceCache, FINANCE_PENDING_SAVE_KEY, FINANCE_PENDING_SHARDS_KEY } from '../utils/financeCache';
 import { authService, isAuthError } from '../services/auth';
+import type { ShardName, Manifest } from '../services/googleDrive';
+
+/**
+ * FF-DATA-4e — the set of names a "dirty" save cycle can reference: the four
+ * entity shards plus the manifest itself (dirty whenever businessSettings/
+ * categories change, or whenever an entity shard's write needs its manifest
+ * index entry updated — see flushToDrive below).
+ */
+type DirtyShard = ShardName | 'manifest';
+const ALL_DIRTY_SHARD_NAMES: readonly DirtyShard[] = ['invoices', 'expenses', 'clients', 'bookingAgents', 'manifest'];
+const ENTITY_SHARD_ORDER: readonly ShardName[] = ['invoices', 'expenses', 'clients', 'bookingAgents'];
+
+function isDirtyShardName(value: unknown): value is DirtyShard {
+  return typeof value === 'string' && (ALL_DIRTY_SHARD_NAMES as readonly string[]).includes(value);
+}
+
+/** Reads the durable set of still-pending shard names left over from a prior
+ * session (e.g. a crash mid-partial-save) — see FINANCE_PENDING_SHARDS_KEY. */
+function loadPendingShardsFromStorage(): Set<DirtyShard> {
+  try {
+    const raw = localStorage.getItem(FINANCE_PENDING_SHARDS_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter(isDirtyShardName));
+  } catch {
+    return new Set();
+  }
+}
 
 export type BusinessType = 'EsekPatur' | 'EsekMorshe' | 'Company';
 export type DocumentType = 'TaxInvoice' | 'Receipt' | 'TaxInvoiceReceipt' | 'TransactionInvoice';
@@ -278,30 +307,66 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isSyncing, setIsSyncing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  // Durable "unsynced edits pending" flag. Seeded from localStorage so a save that
-  // failed before a reload is still known to be pending on next launch — that knowledge
-  // is what stops syncFromDrive from overwriting the ahead-of-Drive local cache.
-  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(FINANCE_PENDING_SAVE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
 
-  // Mark/clear the durable dirty flag (state + localStorage together so they never drift).
-  const markPendingSave = useCallback((pending: boolean) => {
-    setHasUnsyncedChanges(pending);
+  // FF-DATA-4e — durable set of still-dirty SHARD names, replacing the old single
+  // boolean's backing store. Seeded from localStorage so a save that was interrupted
+  // (crash, closed tab) mid-partial-save resumes knowing EXACTLY which shards still
+  // need pushing, instead of treating "everything" as dirty. `hasUnsyncedChanges`
+  // stays the same public boolean (unchanged contract for AppLayout's sync pill):
+  // it is simply `true` iff this set is non-empty.
+  //
+  // Read from localStorage into a plain local (not inside a ref/state initializer
+  // callback) so neither `useRef`'s nor `useState`'s initializer reads a ref's
+  // `.current` during render (react-hooks/refs) — both are seeded from this same
+  // one-time-per-mount value instead.
+  const initialPendingShards = loadPendingShardsFromStorage();
+  const pendingShardsRef = useRef<Set<DirtyShard>>(initialPendingShards);
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(() => initialPendingShards.size > 0);
+
+  // Persists the given dirty-shard set as the new source of truth (ref + localStorage
+  // + the public boolean), so all three can never drift apart.
+  const persistPendingShards = useCallback((shards: Set<DirtyShard>) => {
+    pendingShardsRef.current = shards;
+    setHasUnsyncedChanges(shards.size > 0);
     try {
-      if (pending) localStorage.setItem(FINANCE_PENDING_SAVE_KEY, '1');
-      else localStorage.removeItem(FINANCE_PENDING_SAVE_KEY);
+      if (shards.size > 0) {
+        localStorage.setItem(FINANCE_PENDING_SHARDS_KEY, JSON.stringify(Array.from(shards)));
+        localStorage.setItem(FINANCE_PENDING_SAVE_KEY, '1');
+      } else {
+        localStorage.removeItem(FINANCE_PENDING_SHARDS_KEY);
+        localStorage.removeItem(FINANCE_PENDING_SAVE_KEY);
+      }
     } catch (e) {
-      console.warn('Could not persist pending-save flag', e);
+      console.warn('Could not persist pending-shards flag', e);
     }
   }, []);
 
-  const driveFileId = useRef<string | null>(null);
-  const driveVersion = useRef<string | null>(null);
+  // FF-DATA-4e — per-shard Drive identity (replacing the old single driveFileId/
+  // driveVersion pair). Populated once initShardedAppState/migrateLegacyToShards
+  // resolves for the active business; the manifest is the consistency anchor (§3),
+  // so its file id/version/full last-known body get their own refs.
+  const manifestFileIdRef = useRef<string | null>(null);
+  const manifestVersionRef = useRef<string | null>(null);
+  const manifestRef = useRef<Manifest | null>(null);
+  const shardFileIdsRef = useRef<Partial<Record<ShardName, string>>>({});
+  const shardVersionsRef = useRef<Partial<Record<ShardName, string>>>({});
+
+  // FF-DATA-4e/§2 — per-collection "last-seen" refs + the accumulating dirty set,
+  // seeded whenever a load/merge-adoption completes (see the auto-save effect
+  // below). Every mutator in this file creates a new array/object reference via
+  // spread/map/filter (confirmed by reading every mutator below — none mutate in
+  // place), so reference inequality is a correct, cheap dirty signal; no deep-equal
+  // needed. dirtyShardsRef accumulates across the whole debounce window and is only
+  // drained when a flush actually starts (flushToDrive), so a burst of edits to
+  // different collections within the same second all get flushed together.
+  const prevExpensesRef = useRef<Expense[] | null>(null);
+  const prevInvoicesRef = useRef<Invoice[] | null>(null);
+  const prevClientsRef = useRef<Client[] | null>(null);
+  const prevBookingAgentsRef = useRef<BookingAgent[] | null>(null);
+  const prevCategoriesRef = useRef<string[] | null>(null);
+  const prevSettingsRef = useRef<BusinessSettings | null>(null);
+  const dirtyShardsRef = useRef<Set<DirtyShard>>(new Set());
+
   // Id of the workspace whose data is currently loaded into state. Persistence is
   // gated on this matching activeBusiness, so during a workspace switch we never
   // write the previous workspace's data into the new workspace's app_data.json.
@@ -385,8 +450,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         try {
           let list = await googleDrive.listBusinesses(accessToken);
           if (list.length === 0) {
-            // Force creation of default if none exist
-            await googleDrive.initAppState(accessToken, 'My Business');
+            // Force creation of default if none exist. FF-DATA-4d — a brand-new
+            // business goes straight to the split-file layout (manifest + 4 empty
+            // shards); no legacy app_data.json is ever created for it.
+            await googleDrive.initShardedAppState(accessToken, 'My Business');
             list = await googleDrive.listBusinesses(accessToken);
           }
           setBusinesses(list);
@@ -421,17 +488,33 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isAuthenticated, accessToken, markSessionExpired]);
 
-  // Single source of truth for persisting the loaded workspace's state to Drive. Used
-  // by the debounced auto-save, the backoff retry, the load-time reconnect flush, and
-  // the reconnect effect. It reads the freshest state from latestStateRef so a retry
-  // always saves the LATEST edits, and routes through getValidAccessToken() so a
-  // near-expiry token is refreshed at the moment of save. On a hard 401/403 it flips the
-  // auth-expired state instead of swallowing the error; on any failure it sets a DURABLE
-  // dirty flag and schedules an exponential-backoff retry — edits are never silently dropped.
+  // FF-DATA-4e — single source of truth for persisting the loaded workspace's state
+  // to Drive. Used by the debounced auto-save, the backoff retry, the load-time
+  // reconnect flush, and the reconnect effect. Reads the freshest state from
+  // latestStateRef so a retry always saves the LATEST edits, and routes through
+  // getValidAccessToken() so a near-expiry token is refreshed at the moment of save.
+  //
+  // Design spec §3 save-cycle ordering (the manifest as consistency anchor):
+  //   1. Snapshot + drain the dirty set (this session's accumulator + anything still
+  //      durably pending from an earlier interrupted attempt).
+  //   2. Flush every dirty ENTITY shard (invoices/expenses/clients/bookingAgents) in
+  //      PARALLEL — no cross-shard invariants between them (the one cross-cutting
+  //      invariant, docCounters, lives entirely in the manifest).
+  //   3. Only once every attempted entity-shard write this cycle has resolved
+  //      (success or failure), write the manifest LAST, folding in the shard-index
+  //      entries for whichever shards just succeeded plus businessSettings/
+  //      categories if 'manifest' itself was dirty — so the manifest never points
+  //      at a shard version that doesn't actually exist yet.
+  //   4. Whatever failed this cycle (an entity shard OR the manifest) goes back into
+  //      the durable dirty set for the next attempt. A shard that succeeded is NEVER
+  //      re-added even if the manifest write subsequently fails — it is already
+  //      durably saved on Drive; only the manifest's index is stale, and re-trying
+  //      the manifest alone needs no shard content, just each shard's current
+  //      version, so it is cheap and idempotent no matter how many times retried.
   const flushToDrive = useCallback(async (reason: 'auto' | 'retry' | 'reconnect') => {
-    const fileId = driveFileId.current;
+    const manifestFileId = manifestFileIdRef.current;
     const state = latestStateRef.current;
-    if (!fileId || !state) return;
+    if (!manifestFileId || !state) return;
 
     // Cancel any pending retry; this attempt supersedes it.
     if (retryTimerRef.current) {
@@ -439,44 +522,187 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       retryTimerRef.current = null;
     }
 
+    // Step 1 — snapshot + drain.
+    const toFlush = new Set<DirtyShard>([...dirtyShardsRef.current, ...pendingShardsRef.current]);
+    dirtyShardsRef.current = new Set();
+    if (toFlush.size === 0) return;
+
     setIsSyncing(true);
+
+    let token: string;
     try {
-      const token = await authService.getValidAccessToken();
-      const { version, merged } = await googleDrive.saveAppStateGuarded(
-        token,
-        fileId,
-        driveVersion.current,
-        state
-      );
-      driveVersion.current = version;
-
-      // A concurrent write from another device was detected and merged in —
-      // adopt the merged result so this device reflects the other's changes. This
-      // adoption is load-induced, not a user edit: gate the auto-save effect so it
-      // doesn't re-dirty / re-flush off these setState calls. The merged state was
-      // already persisted by saveAppStateGuarded above (version bumped), so skipping
-      // the follow-up auto-save loses no needed write.
-      if (merged) {
-        justLoadedRef.current = true;
-        setExpenses(merged.expenses);
-        setCategories(merged.categories);
-        setClients(merged.clients);
-        setInvoices(merged.invoices);
-        setBookingAgents(merged.bookingAgents || []);
-      }
-      // Save confirmed on Drive: clear the durable dirty flag and reset backoff.
-      retryAttemptRef.current = 0;
-      markPendingSave(false);
-      setSyncError(null);
+      token = await authService.getValidAccessToken();
     } catch (error) {
-      console.error(`Drive Save Error (${reason}):`, error);
-      // Edits live only in localStorage now — mark them durably pending so a reload
-      // knows the cache is ahead of Drive and must not be overwritten.
-      markPendingSave(true);
-
+      console.error(`Drive Save Error (${reason}): could not obtain a valid access token`, error);
+      persistPendingShards(new Set([...dirtyShardsRef.current, ...toFlush]));
       if (isAuthError(error)) {
-        // Token is dead. Surface the reconnect state; a successful re-auth / foreground
-        // refresh will trigger a flush via the reconnect effect below.
+        markSessionExpired();
+        setSyncError(null);
+      } else {
+        setSyncError('Sync delayed: changes saved locally, retrying…');
+        const attempt = Math.min(retryAttemptRef.current, 5);
+        const delay = Math.min(1000 * 2 ** attempt, 60_000);
+        retryAttemptRef.current = attempt + 1;
+        retryTimerRef.current = setTimeout(() => { void flushToDriveRef.current?.('retry'); }, delay);
+      }
+      setIsSyncing(false);
+      return;
+    }
+
+    try {
+      const collectionFor = (name: ShardName): (Invoice | Expense | Client | BookingAgent)[] => {
+        if (name === 'invoices') return state.invoices;
+        if (name === 'expenses') return state.expenses;
+        if (name === 'clients') return state.clients;
+        return state.bookingAgents || [];
+      };
+
+      type ShardOutcome =
+        | { name: ShardName; ok: true; version: string; merged: unknown[] | null }
+        | { name: ShardName; ok: false; error: unknown };
+
+      // Step 2 — every dirty entity shard, in parallel.
+      const attemptShard = async (name: ShardName): Promise<ShardOutcome> => {
+        const fileId = shardFileIdsRef.current[name];
+        if (!fileId) {
+          const error = new Error(`FF-DATA-4e: no known Drive file id yet for shard "${name}"`);
+          console.warn(error.message, '— deferring this shard to the next cycle.');
+          return { name, ok: false, error };
+        }
+        try {
+          let result: { version: string; merged: unknown[] | null };
+          switch (name) {
+            case 'invoices':
+              result = await googleDrive.saveShardGuarded(
+                token, fileId, shardVersionsRef.current.invoices ?? null, collectionFor('invoices') as Invoice[], 'invoices'
+              );
+              break;
+            case 'expenses':
+              result = await googleDrive.saveShardGuarded(
+                token, fileId, shardVersionsRef.current.expenses ?? null, collectionFor('expenses') as Expense[], 'expenses'
+              );
+              break;
+            case 'clients':
+              result = await googleDrive.saveShardGuarded(
+                token, fileId, shardVersionsRef.current.clients ?? null, collectionFor('clients') as Client[], 'clients'
+              );
+              break;
+            case 'bookingAgents':
+              result = await googleDrive.saveShardGuarded(
+                token, fileId, shardVersionsRef.current.bookingAgents ?? null, collectionFor('bookingAgents') as BookingAgent[], 'bookingAgents'
+              );
+              break;
+          }
+          return { name, ok: true, version: result.version, merged: result.merged };
+        } catch (error) {
+          console.error(`Drive Save Error (${reason}): shard "${name}" failed`, error);
+          return { name, ok: false, error };
+        }
+      };
+
+      const entityShardsToFlush = ENTITY_SHARD_ORDER.filter((name) => toFlush.has(name));
+      const results = await Promise.all(entityShardsToFlush.map(attemptShard));
+
+      const succeededEntries: Manifest['shards'] = {};
+      const failedShards = new Set<DirtyShard>();
+      const errors: unknown[] = [];
+      let anyMergedAdoption = false;
+
+      for (const r of results) {
+        if (r.ok) {
+          shardVersionsRef.current[r.name] = r.version;
+          succeededEntries[r.name] = {
+            fileId: shardFileIdsRef.current[r.name]!,
+            version: r.version,
+            recordCount: collectionFor(r.name).length,
+            updatedAt: new Date().toISOString(),
+          };
+          if (r.merged) {
+            anyMergedAdoption = true;
+            switch (r.name) {
+              case 'invoices': setInvoices(r.merged as Invoice[]); break;
+              case 'expenses': setExpenses(r.merged as Expense[]); break;
+              case 'clients': setClients(r.merged as Client[]); break;
+              case 'bookingAgents': setBookingAgents(r.merged as BookingAgent[]); break;
+            }
+          }
+        } else {
+          failedShards.add(r.name);
+          errors.push(r.error);
+        }
+      }
+
+      // Step 3 — the manifest, written LAST, only after every attempted entity-shard
+      // write above has resolved. Dirty if businessSettings/categories changed OR any
+      // entity shard just got a new version that needs recording in the shard index.
+      const manifestDirtyThisCycle = toFlush.has('manifest') || Object.keys(succeededEntries).length > 0;
+      let manifestFailed = false;
+
+      if (manifestDirtyThisCycle) {
+        const baseManifest: Manifest =
+          manifestRef.current ?? {
+            schemaVersion: 2,
+            businessSettings: state.businessSettings,
+            categories: state.categories,
+            shards: {},
+          };
+        const nextManifest: Manifest = {
+          ...baseManifest,
+          shards: { ...baseManifest.shards, ...succeededEntries },
+          ...(toFlush.has('manifest')
+            ? { businessSettings: state.businessSettings, categories: state.categories }
+            : {}),
+        };
+        try {
+          const { version, merged } = await googleDrive.saveManifestGuarded(
+            token,
+            manifestFileId,
+            manifestVersionRef.current,
+            nextManifest
+          );
+          manifestVersionRef.current = version;
+          manifestRef.current = merged ?? nextManifest;
+          if (merged) {
+            anyMergedAdoption = true;
+            for (const name of ENTITY_SHARD_ORDER) {
+              const entry = merged.shards[name];
+              if (entry) shardVersionsRef.current[name] = entry.version;
+            }
+            setBusinessSettings(merged.businessSettings);
+            setCategories(merged.categories);
+          }
+        } catch (error) {
+          console.error(`Drive Save Error (${reason}): manifest write failed`, error);
+          manifestFailed = true;
+          errors.push(error);
+        }
+      }
+
+      if (anyMergedAdoption) {
+        // A concurrent write from another device was detected and merged in for at
+        // least one shard or the manifest — adopt it. This is load-induced, not a
+        // user edit: gate the auto-save effect so it doesn't re-dirty/re-flush off
+        // these setState calls (the merged data is already durably saved by the
+        // guarded save(s) above, so skipping the follow-up auto-save loses no write).
+        justLoadedRef.current = true;
+      }
+
+      // Step 4 — whatever failed this cycle stays/goes back into the durable dirty
+      // set, merged with anything the render-time effect accumulated WHILE this
+      // flush was in flight (a real edit made during the await window) so it's never
+      // clobbered.
+      const stillDirtyThisAttempt = new Set<DirtyShard>(failedShards);
+      if (manifestDirtyThisCycle && manifestFailed) stillDirtyThisAttempt.add('manifest');
+      const finalDirty = new Set<DirtyShard>([...dirtyShardsRef.current, ...stillDirtyThisAttempt]);
+      dirtyShardsRef.current = finalDirty;
+      persistPendingShards(finalDirty);
+
+      if (finalDirty.size === 0) {
+        retryAttemptRef.current = 0;
+        setSyncError(null);
+      } else if (errors.some(isAuthError)) {
+        // Token is dead. Surface the reconnect state; a successful re-auth /
+        // foreground refresh will trigger a flush via the reconnect effect below.
         markSessionExpired();
         setSyncError(null);
       } else {
@@ -490,7 +716,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsSyncing(false);
     }
-  }, [markPendingSave, markSessionExpired]);
+  }, [persistPendingShards, markSessionExpired]);
 
   // Keep the ref pointed at the latest flushToDrive for the scheduled-retry indirection.
   useEffect(() => { flushToDriveRef.current = flushToDrive; }, [flushToDrive]);
@@ -517,10 +743,47 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           // the possibly-stale context token, so a load right after resume doesn't 401.
           const token = await authService.getValidAccessToken();
 
-          const { fileId } = await googleDrive.initAppState(token, activeBusiness.name);
-          driveFileId.current = fileId;
-          const driveData = await googleDrive.fetchAppState(token, fileId);
-          driveVersion.current = await googleDrive.getFileVersion(token, fileId);
+          // FF-DATA-4d/4e — the split-file-aware bootstrap: detects/creates/migrates/
+          // resumes per the design spec §4 detection table, then resolves this
+          // workspace's manifest + per-shard identity from its returned shard index.
+          const initResult = await googleDrive.initShardedAppState(token, activeBusiness.name);
+          manifestFileIdRef.current = initResult.manifestFileId;
+          manifestVersionRef.current = await googleDrive.getFileVersion(token, initResult.manifestFileId);
+          manifestRef.current = initResult.manifest;
+
+          const shardIndex = initResult.manifest.shards;
+          shardFileIdsRef.current = {
+            invoices: shardIndex.invoices?.fileId,
+            expenses: shardIndex.expenses?.fileId,
+            clients: shardIndex.clients?.fileId,
+            bookingAgents: shardIndex.bookingAgents?.fileId,
+          };
+          // Seeded directly from the manifest's own shard index rather than a fresh
+          // getFileVersion round-trip per shard: the index IS the version as of the
+          // manifest's last write, and saveShardGuarded already re-verifies/merges on
+          // any mismatch at save time, so this is both correct and cheaper.
+          shardVersionsRef.current = {
+            invoices: shardIndex.invoices?.version,
+            expenses: shardIndex.expenses?.version,
+            clients: shardIndex.clients?.version,
+            bookingAgents: shardIndex.bookingAgents?.version,
+          };
+
+          const [invoicesData, expensesData, clientsData, bookingAgentsData] = await Promise.all([
+            shardIndex.invoices ? googleDrive.fetchShard(token, shardIndex.invoices.fileId, 'invoices') : Promise.resolve<Invoice[]>([]),
+            shardIndex.expenses ? googleDrive.fetchShard(token, shardIndex.expenses.fileId, 'expenses') : Promise.resolve<Expense[]>([]),
+            shardIndex.clients ? googleDrive.fetchShard(token, shardIndex.clients.fileId, 'clients') : Promise.resolve<Client[]>([]),
+            shardIndex.bookingAgents ? googleDrive.fetchShard(token, shardIndex.bookingAgents.fileId, 'bookingAgents') : Promise.resolve<BookingAgent[]>([]),
+          ]);
+
+          const driveData: googleDrive.AppState = {
+            invoices: invoicesData,
+            expenses: expensesData,
+            clients: clientsData,
+            bookingAgents: bookingAgentsData,
+            categories: initResult.manifest.categories,
+            businessSettings: initResult.manifest.businessSettings,
+          };
 
           // Merge Drive INTO local (union-by-id, local-wins) so a record edited locally
           // is never erased by a Drive copy that lacks it. When there's no same-workspace
@@ -621,29 +884,56 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Could not save finance data to localStorage', storageError);
     }
 
-    // Consume-once gate: if this run was triggered by a load/merge adoption (not a user
-    // edit), the state matches Drive (or was just persisted by the merge save), so bail
-    // BEFORE marking dirty or scheduling a flush — a load must not flicker the unsynced
-    // pill or write a no-delta app_data.json. React 19 batches the load's setState calls
-    // into a single effect run, so one consume covers the whole load. The next render is
-    // a real edit, finds the flag false, and persists normally.
+    // FF-DATA-4e/§2 — per-collection dirty-tracking via reference inequality. Every
+    // mutator in this file creates a new array/object reference via spread/map/
+    // filter (confirmed by reading every mutator below — none mutate in place), so
+    // reference inequality is a correct, cheap dirty signal; no deep-equal needed.
+    // This ALWAYS runs (even on a load/merge-adoption render, below) so prevXRef
+    // stays in lockstep with the latest reference; only the "mark dirty + schedule a
+    // flush" part is skipped for a load-induced render (the justLoadedRef gate).
+    const changedShards = new Set<DirtyShard>();
+    if (expenses !== prevExpensesRef.current) { changedShards.add('expenses'); prevExpensesRef.current = expenses; }
+    if (invoices !== prevInvoicesRef.current) { changedShards.add('invoices'); prevInvoicesRef.current = invoices; }
+    if (clients !== prevClientsRef.current) { changedShards.add('clients'); prevClientsRef.current = clients; }
+    if (bookingAgents !== prevBookingAgentsRef.current) { changedShards.add('bookingAgents'); prevBookingAgentsRef.current = bookingAgents; }
+    if (categories !== prevCategoriesRef.current || businessSettings !== prevSettingsRef.current) {
+      // docCounters lives inside businessSettings, which lives in the manifest —
+      // bumped on essentially every addInvoice call, in addition to whichever
+      // entity shard changed. Expected: the manifest is tiny, well under the cost
+      // of re-uploading a multi-hundred-KB entity shard every time.
+      changedShards.add('manifest');
+      prevCategoriesRef.current = categories;
+      prevSettingsRef.current = businessSettings;
+    }
+
+    // Consume-once gate: if this run was triggered by a load/merge adoption (not a
+    // user edit), the state matches Drive (or was just persisted by the guarded
+    // save(s)), so bail BEFORE marking dirty or scheduling a flush — a load must not
+    // flicker the unsynced pill or write a no-delta shard/manifest. React 19 batches
+    // the load's setState calls into a single effect run, so one consume covers the
+    // whole load (or a partial merge-adoption). The next render is a real edit,
+    // finds the flag false, and persists normally.
     if (justLoadedRef.current) {
       justLoadedRef.current = false;
       return;
     }
 
-    // An edit just landed: from Drive's perspective the cache is now ahead until a save
-    // confirms. Mark it pending up front so a crash/close inside the debounce window is
-    // still recorded as unsynced (the flag is cleared the moment a save succeeds).
-    markPendingSave(true);
+    if (changedShards.size === 0) return;
+
+    // An edit just landed: from Drive's perspective the cache is now ahead until a
+    // save confirms. Mark the affected shard(s) pending up front so a crash/close
+    // inside the debounce window is still recorded as unsynced (cleared the moment
+    // flushToDrive's guarded save(s) succeed).
+    for (const shard of changedShards) dirtyShardsRef.current.add(shard);
+    persistPendingShards(new Set([...pendingShardsRef.current, ...dirtyShardsRef.current]));
 
     // Debounced Drive save. We attempt even while sessionExpired so a token that came
     // back (foreground refresh) gets used; flushToDrive re-flags expiry on a real 401.
-    if (driveFileId.current) {
+    if (manifestFileIdRef.current) {
       const timer = setTimeout(() => { void flushToDrive('auto'); }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, activeBusiness, flushToDrive, markPendingSave]);
+  }, [expenses, categories, clients, invoices, bookingAgents, businessSettings, activeBusiness, flushToDrive, persistPendingShards]);
 
   // Reconnect flush: whenever we are authenticated, the session is NOT expired, and we
   // still hold unsynced edits for the loaded workspace, push them to Drive. This fires
@@ -655,7 +945,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isAuthenticated &&
       !sessionExpired &&
       hasUnsyncedChanges &&
-      driveFileId.current &&
+      manifestFileIdRef.current &&
       activeBusiness &&
       loadedBusinessId.current === activeBusiness.id
     ) {
@@ -668,6 +958,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Drive BEFORE wiping the local cache, so a logout within the 1s save debounce can't
   // lose unsynced edits; then purge all finance_* keys and reset in-memory state so the
   // next user on a shared device can't read the previous user's financial data.
+  //
+  // FF-DATA-4e — best-effort, ONE attempt per still-dirty shard + the manifest (no
+  // retry scheduling: the cache is wiped regardless of outcome, so there is nothing
+  // left to retry against once this finishes).
   const wasAuthenticatedRef = useRef(isAuthenticated);
   useEffect(() => {
     const wasAuthenticated = wasAuthenticatedRef.current;
@@ -676,21 +970,86 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (wasAuthenticated && !isAuthenticated) {
       const flushAndClear = async () => {
         const token = accessTokenRef.current;
-        const fileId = driveFileId.current;
+        const manifestFileId = manifestFileIdRef.current;
         const state = latestStateRef.current;
         // Best-effort final save of unsynced changes (token is briefly still valid
         // right after logout is requested). Never block the wipe on a failed save.
-        if (token && fileId && state && hasPendingDataRef.current) {
-          try {
-            await googleDrive.saveAppStateGuarded(token, fileId, driveVersion.current, state);
-          } catch (error) {
-            console.warn('Final pre-logout Drive flush failed; clearing local cache anyway.', error);
+        if (token && manifestFileId && state && hasPendingDataRef.current) {
+          const toFlush = new Set<DirtyShard>([...dirtyShardsRef.current, ...pendingShardsRef.current]);
+          const collectionFor = (name: ShardName): (Invoice | Expense | Client | BookingAgent)[] => {
+            if (name === 'invoices') return state.invoices;
+            if (name === 'expenses') return state.expenses;
+            if (name === 'clients') return state.clients;
+            return state.bookingAgents || [];
+          };
+          const succeededEntries: Manifest['shards'] = {};
+
+          for (const name of ENTITY_SHARD_ORDER) {
+            if (!toFlush.has(name)) continue;
+            const fileId = shardFileIdsRef.current[name];
+            if (!fileId) continue;
+            try {
+              let result: { version: string };
+              switch (name) {
+                case 'invoices':
+                  result = await googleDrive.saveShardGuarded(token, fileId, shardVersionsRef.current.invoices ?? null, collectionFor('invoices') as Invoice[], 'invoices');
+                  break;
+                case 'expenses':
+                  result = await googleDrive.saveShardGuarded(token, fileId, shardVersionsRef.current.expenses ?? null, collectionFor('expenses') as Expense[], 'expenses');
+                  break;
+                case 'clients':
+                  result = await googleDrive.saveShardGuarded(token, fileId, shardVersionsRef.current.clients ?? null, collectionFor('clients') as Client[], 'clients');
+                  break;
+                case 'bookingAgents':
+                  result = await googleDrive.saveShardGuarded(token, fileId, shardVersionsRef.current.bookingAgents ?? null, collectionFor('bookingAgents') as BookingAgent[], 'bookingAgents');
+                  break;
+              }
+              succeededEntries[name] = {
+                fileId,
+                version: result.version,
+                recordCount: collectionFor(name).length,
+                updatedAt: new Date().toISOString(),
+              };
+            } catch (error) {
+              console.warn(`Final pre-logout Drive flush failed for shard "${name}"; clearing local cache anyway.`, error);
+            }
+          }
+
+          if (Object.keys(succeededEntries).length > 0 || toFlush.has('manifest')) {
+            const baseManifest: Manifest = manifestRef.current ?? {
+              schemaVersion: 2,
+              businessSettings: state.businessSettings,
+              categories: state.categories,
+              shards: {},
+            };
+            const nextManifest: Manifest = {
+              ...baseManifest,
+              shards: { ...baseManifest.shards, ...succeededEntries },
+              ...(toFlush.has('manifest')
+                ? { businessSettings: state.businessSettings, categories: state.categories }
+                : {}),
+            };
+            try {
+              await googleDrive.saveManifestGuarded(token, manifestFileId, manifestVersionRef.current, nextManifest);
+            } catch (error) {
+              console.warn('Final pre-logout Drive flush failed for the manifest; clearing local cache anyway.', error);
+            }
           }
         }
 
         clearFinanceCache();
-        driveFileId.current = null;
-        driveVersion.current = null;
+        manifestFileIdRef.current = null;
+        manifestVersionRef.current = null;
+        manifestRef.current = null;
+        shardFileIdsRef.current = {};
+        shardVersionsRef.current = {};
+        prevExpensesRef.current = null;
+        prevInvoicesRef.current = null;
+        prevClientsRef.current = null;
+        prevBookingAgentsRef.current = null;
+        prevCategoriesRef.current = null;
+        prevSettingsRef.current = null;
+        dirtyShardsRef.current = new Set();
         loadedBusinessId.current = null;
         hasPendingDataRef.current = false;
         if (retryTimerRef.current) {
@@ -698,7 +1057,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           retryTimerRef.current = null;
         }
         retryAttemptRef.current = 0;
-        markPendingSave(false);
+        persistPendingShards(new Set());
 
         setExpenses([]);
         setCategories(DEFAULT_CATEGORIES);
@@ -712,7 +1071,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
       void flushAndClear();
     }
-  }, [isAuthenticated, markPendingSave]);
+  }, [isAuthenticated, persistPendingShards]);
 
   const addExpense = (expense: Omit<Expense, 'id'> & { id?: string }) => {
     const newExpense = { ...expense, id: expense.id || uuidv4(), createdAt: expense.createdAt || new Date().toISOString() };
@@ -990,7 +1349,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!isAuthenticated || !accessToken) return;
     setIsLoading(true);
     try {
-      const { folderId } = await googleDrive.initAppState(accessToken, name);
+      // FF-DATA-4d — a brand-new business is created directly in the split-file
+      // layout (manifest + 4 empty shards); no legacy app_data.json is ever created.
+      const { folderId } = await googleDrive.initShardedAppState(accessToken, name);
       // Re-fetch businesses list to get the new folder
       const list = await googleDrive.listBusinesses(accessToken);
       setBusinesses(list);

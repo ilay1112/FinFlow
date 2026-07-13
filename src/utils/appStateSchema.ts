@@ -279,19 +279,166 @@ function normalizeCategories(raw: unknown): string[] {
 }
 
 /**
+ * FF-DATA-4c — per-collection normalizer wrappers, exported so a shard file
+ * (e.g. `invoices.json.gz`) can be validated/normalized on its own, without going
+ * through the whole-`AppState` composing wrapper below. Each one applies the same
+ * untrusted-input posture as `normalizeAppState` (F-7 lineage): `stripDangerousKeys`
+ * first, then the existing per-record normalizer, dropping records that don't
+ * repair. Exactly the logic that was previously only inlined in `normalizeAppState`.
+ */
+export function normalizeExpenses(raw: unknown): Expense[] {
+  const safe = stripDangerousKeys(raw);
+  return asArray(safe).map(normalizeExpense).filter((e): e is Expense => e !== null);
+}
+
+export function normalizeClients(raw: unknown): Client[] {
+  const safe = stripDangerousKeys(raw);
+  return asArray(safe).map(normalizeClient).filter((c): c is Client => c !== null);
+}
+
+export function normalizeInvoices(raw: unknown): Invoice[] {
+  const safe = stripDangerousKeys(raw);
+  return asArray(safe).map(normalizeInvoice).filter((i): i is Invoice => i !== null);
+}
+
+export function normalizeBookingAgents(raw: unknown): BookingAgent[] {
+  const safe = stripDangerousKeys(raw);
+  return asArray(safe).map(normalizeBookingAgent).filter((a): a is BookingAgent => a !== null);
+}
+
+/**
+ * FF-DATA-4c/§5 — the four known shard names a manifest's `shards` index may
+ * reference. Kept here (alongside the normalizers that validate them) so the
+ * whitelist and the per-shard normalizer dispatch can never drift apart.
+ */
+export const SHARD_NAMES = ['invoices', 'expenses', 'clients', 'bookingAgents'] as const;
+export type ShardName = (typeof SHARD_NAMES)[number];
+
+/** A single shard's entry in the manifest's `shards` index (§1/§3 of the spec). */
+export interface ShardIndexEntry {
+  fileId: string;
+  version: string;
+  recordCount: number;
+  updatedAt: string;
+}
+
+/**
+ * The manifest's migration-status block (§4). Absent entirely on a business that
+ * was created directly in the split-file format (never had a legacy blob to
+ * migrate from).
+ */
+export interface MigrationStatus {
+  status: 'in_progress' | 'complete';
+  legacyFileId?: string;
+  startedAt?: string;
+  migratedAt?: string;
+}
+
+/**
+ * `manifest.json.gz`'s shape (§1/§5): `schemaVersion` (new concept — `AppState`/
+ * this file previously had no version field at all, confirmed by a full read this
+ * session), the small/slow-changing pieces (`businessSettings`, `categories`), the
+ * shard file-id/version index, and the migration status block.
+ */
+export interface Manifest {
+  schemaVersion: number;
+  businessSettings: BusinessSettings;
+  categories: string[];
+  shards: Partial<Record<ShardName, ShardIndexEntry>>;
+  migration?: MigrationStatus;
+}
+
+function isShardName(value: string): value is ShardName {
+  return (SHARD_NAMES as readonly string[]).includes(value);
+}
+
+/**
+ * F-7 lineage — a manifest is exactly as untrusted as `app_data.json` (same Drive
+ * file, same user-editable trust boundary). Beyond the usual type-coercion/enum-
+ * whitelisting posture, this additionally validates that a `shards.<name>.fileId`
+ * is a plausible Drive-id-shaped string (`[A-Za-z0-9_-]+`) before it is ever
+ * interpolated into a `files/{id}` fetch URL elsewhere — defense against a
+ * tampered manifest smuggling an unexpected id into a Drive API path segment.
+ */
+function isPlausibleDriveFileId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function normalizeShardIndexEntry(raw: unknown): ShardIndexEntry | null {
+  if (!isObject(raw)) return null;
+  if (!isPlausibleDriveFileId(raw.fileId)) return null;
+  return {
+    fileId: raw.fileId,
+    version: toStr(raw.version),
+    recordCount: Math.max(0, Math.floor(toNonNegNum(raw.recordCount))),
+    updatedAt: toStr(raw.updatedAt),
+  };
+}
+
+function normalizeShardsIndex(raw: unknown): Manifest['shards'] {
+  if (!isObject(raw)) return {};
+  const result: Manifest['shards'] = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isShardName(key)) continue; // drop any key outside the known whitelist
+    const entry = normalizeShardIndexEntry(value);
+    if (entry) result[key] = entry;
+  }
+  return result;
+}
+
+function normalizeMigrationStatus(raw: unknown): MigrationStatus | undefined {
+  if (!isObject(raw)) return undefined;
+  const status = oneOfOptional(raw.status, ['in_progress', 'complete'] as const);
+  if (!status) return undefined;
+  return {
+    status,
+    legacyFileId: isPlausibleDriveFileId(raw.legacyFileId) ? raw.legacyFileId : undefined,
+    startedAt: toOptionalStr(raw.startedAt),
+    migratedAt: toOptionalStr(raw.migratedAt),
+  };
+}
+
+/**
+ * Validates and normalizes an untrusted, freshly-parsed `manifest.json.gz` payload.
+ * `schemaVersion` defaults to `1` (the implicit, unversioned monolithic-blob format)
+ * if missing/malformed — this file/format only introduces `schemaVersion: 2` for
+ * the new split-file layout; there is no in-between version to validate against yet.
+ */
+export function normalizeManifest(raw: unknown): Manifest {
+  const safe = stripDangerousKeys(raw);
+  const obj = isObject(safe) ? safe : {};
+
+  const schemaVersionRaw = toNonNegNum(obj.schemaVersion, 1);
+  const schemaVersion = Number.isInteger(schemaVersionRaw) && schemaVersionRaw > 0 ? schemaVersionRaw : 1;
+
+  return {
+    schemaVersion,
+    businessSettings: normalizeBusinessSettings(obj.businessSettings),
+    categories: normalizeCategories(obj.categories),
+    shards: normalizeShardsIndex(obj.shards),
+    migration: normalizeMigrationStatus(obj.migration),
+  };
+}
+
+/**
  * Validates and normalizes an untrusted, freshly-parsed `app_data.json` (or cached
  * localStorage blob) into a trusted, well-shaped {@link AppState}. Never throws on a
  * malformed file — bad records are dropped and missing fields defaulted.
+ *
+ * FF-DATA-4c — now a thin composing wrapper over the exported per-collection
+ * normalizers above (+ this file's own `businessSettings`/`categories` logic), so
+ * every existing whole-`AppState` caller (the legacy-blob load/migration path,
+ * `mergeAppState`, the localStorage hydrate effect) keeps working unmodified.
  */
 export function normalizeAppState(raw: unknown): AppState {
   const safe = stripDangerousKeys(raw);
   const obj = isObject(safe) ? safe : {};
 
   return {
-    expenses: asArray(obj.expenses).map(normalizeExpense).filter((e): e is Expense => e !== null),
-    clients: asArray(obj.clients).map(normalizeClient).filter((c): c is Client => c !== null),
-    invoices: asArray(obj.invoices).map(normalizeInvoice).filter((i): i is Invoice => i !== null),
-    bookingAgents: asArray(obj.bookingAgents).map(normalizeBookingAgent).filter((a): a is BookingAgent => a !== null),
+    expenses: normalizeExpenses(obj.expenses),
+    clients: normalizeClients(obj.clients),
+    invoices: normalizeInvoices(obj.invoices),
+    bookingAgents: normalizeBookingAgents(obj.bookingAgents),
     categories: normalizeCategories(obj.categories),
     businessSettings: normalizeBusinessSettings(obj.businessSettings),
   };

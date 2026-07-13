@@ -43,7 +43,9 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-PM-3     | Pricing hypothesis + willingness-to-pay        | product-manager | cfo                         | **Done** — hypothesis delivered (`ops/research/FF-PM-3-pricing-hypothesis.md`); cfo CLEAR; WTP to be tested in FF-PM-2 interviews |
 | FF-OPS-1    | Triage 132 project-wide lint errors            | web-developer   | qa                          | Backlog (Next — not in validation batch) |
 | FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
-| FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | **security, qa (blocking)** | Ready — design spec delivered (`ops/research/FF-DATA-4-entity-split-spec.md`), awaiting web-developer implementation |
+| FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | security, qa | In Validation — 4a-4e done (4f skipped); **all gates CLEAR** (incl. #1/#2 hardening re-review); staged on `feat/data-4-entity-split` → **owner LIVE-DRILL** (`ops/research/FF-DATA-4-LIVE-DRILL-CHECKLIST.md`) before merge |
+| FF-DATA-8   | Harden `mergeManifest` local-wins on settings/categories (rare 3-device edit-drop; non-financial) | web-developer | security | Backlog (follow-up from FF-DATA-4 security re-review) |
+| FF-DOC-1    | Update vault `ARCHITECTURE.md` §6.2/6.3/7.1-7.3/13 for the sharded storage model | backend-platform | — | Backlog (do at/before FF-DATA-4 merge — Loop C) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
 | FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | **Done** — all gates CLEAR; shipped (e82422b) |
@@ -156,6 +158,370 @@ git commit made.
 @security-validator + @qa-validator: gate before merge per the Ticket Index (blocking). ARCHITECTURE.md
 §6-7/§13 need updating after this ships (spec §8 lists the exact sections) — not done in this
 session, flagging for whoever owns doc upkeep post-implementation.
+
+#### [HANDOFF] web-developer → @security-validator, @qa-validator · 2026-07-13
+**Ticket:** FF-DATA-4 (sub-tickets 4a-4e implemented this session; 4f explicitly SKIPPED per the
+ticket's own instruction — owner decided against the dual-write mirror)
+
+Implemented per `ops/research/FF-DATA-4-entity-split-spec.md`, re-reading the spec plus full current
+`src/services/googleDrive.ts`, `src/context/FinanceContext.tsx`, `src/utils/appStateSchema.ts` before
+touching code.
+
+**Files changed:**
+- `src/utils/gzipTransport.ts` (NEW, 4a) — `compressJson`/`decompressJson` using native
+  `CompressionStream`/`DecompressionStream`, feature-detected fallback to plain JSON, format-sniff-on-
+  read (gzip magic-byte check), a 50 MB decompressed-payload sanity bound (security review point).
+- `src/services/googleDrive.ts` (4b/4d) — `Manifest`/`ShardName`/`ShardIndexEntry` types (re-exported
+  from `appStateSchema.ts`); `fetchManifest`/`saveManifest`/`fetchShard`/`saveShard`/
+  `saveShardGuarded`/`saveManifestGuarded` built on the 4a transport; `migrateLegacyToShards()` and
+  `initShardedAppState()` implementing the §4 detection table; `createFreshManifestAndShards()` for
+  brand-new businesses. **`fetchAppState`/`saveAppState`/`saveAppStateGuarded`/`initAppState` kept
+  exported and functionally unchanged** (only `initAppState` was refactored to share
+  `resolveBusinessFolderId` with the new bootstrap — same behavior, no duplicated root-folder logic).
+- `src/utils/appStateSchema.ts` (4c) — exported `normalizeInvoices`/`normalizeExpenses`/
+  `normalizeClients`/`normalizeBookingAgents` + new `normalizeManifest` (validates `schemaVersion`,
+  whitelists the 4 known shard-index keys, validates each `shards.<name>.fileId` is Drive-id-shaped
+  `[A-Za-z0-9_-]+` before it can ever reach a `files/{id}` fetch URL, validates `migration.status`
+  enum). `normalizeAppState` is now a thin composing wrapper over these — same exported signature,
+  every existing caller (localStorage hydrate, `mergeAppState`, the migration's legacy-blob read)
+  unmodified.
+- `src/utils/financeCache.ts` — added `finance_pending_shards` to the key registry + purge list, new
+  `FINANCE_PENDING_SHARDS_KEY` export.
+- `src/context/FinanceContext.tsx` (4e) — per-collection `prevXRef`s + `dirtyShardsRef` (reference-
+  inequality dirty-tracking, §2); `manifestFileIdRef`/`manifestVersionRef`/`manifestRef`/
+  `shardFileIdsRef`/`shardVersionsRef` replacing the old single `driveFileId`/`driveVersion`;
+  `flushToDrive` rewritten to the §3 save-cycle ordering (entity shards in parallel, manifest last,
+  failed shards/manifest re-queued, successful shards never re-attempted even if the manifest write
+  subsequently fails); `hasUnsyncedChanges` kept as the same public boolean, now backed by a
+  persisted `Set` of dirty shard names (`persistPendingShards`). Load path (`syncFromDrive` effect)
+  now calls `initShardedAppState` and seeds all the new refs from its returned manifest/shard index.
+  Logout flush (F-3 invariant) rewritten as a best-effort, one-attempt-per-dirty-shard(+manifest)
+  save, no retry scheduling (cache is wiped regardless). `createBusiness` and the "no businesses yet"
+  bootstrap now call `initShardedAppState` (brand-new businesses never get a legacy `app_data.json`).
+  Reconnect effect, backoff retry, `justLoadedRef` consume-once gate — all preserved.
+
+**Data-safety ordering implemented (`googleDrive.ts:migrateLegacyToShards`, ~line 666):** detect (no
+manifest + legacy present, or manifest `in_progress`) → claim (create `manifest.json.gz` first with
+`migration.status: 'in_progress'`, empty shard index; re-list by exact name — on a duplicate,
+self-delete and throw `MigrationRaceLostError`, deferring to the winner) → write shards one at a time
+in fixed order (invoices→expenses→clients→bookingAgents), PATCHing the manifest's shard index after
+EACH individual shard succeeds → verify (re-fetch + normalize every shard, compare record count +
+first/last id against the legacy-normalized source; ANY mismatch aborts without advancing status,
+leaving `in_progress` for a resumed retry) → finalize (single commit-point PATCH: `status: 'complete'`
++ `businessSettings`/`categories` moved into the manifest body). `app_data.json` is never referenced
+by any delete/write call anywhere in this path — confirmed by reading every line of the function.
+Resumption re-enters the same function; already-written shards are skipped via `fileStillResolves`
+(a manifest entry pointing at a since-deleted file id is treated as missing and rewritten from the
+still-untouched legacy source). Steady-state per-shard saves (`saveShardGuarded`/`saveManifestGuarded`
+in `FinanceContext.tsx`'s `flushToDrive`) keep the same manifest-last discipline: the manifest is only
+ever written after every attempted entity-shard write this cycle has resolved, so it can never
+reference a shard version that doesn't exist.
+
+**FF-DATA-4f confirmed skipped** per the ticket's explicit instruction (owner decided against the
+dual-write mirror) — no code added for it, `app_data.json` remains permanently untouched post-
+migration with no compensating live mirror.
+
+**Evidence (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — exit 0, clean. Bundle `dist/assets/index-*.js` 1,639.93 kB
+  / **477.57 KB gzip** (baseline 2026-07-12 was 474 KB gz; +~3.5 KB from this change, no new npm
+  dependency added — `package.json`/`package-lock.json` untouched, confirmed via `git status`) — still
+  under `ops/PRODUCT.md`'s 500 KB gz budget.
+- `npx eslint` scoped to the 5 changed/new files — 1 pre-existing `react-refresh/only-export-
+  components` finding (confirmed pre-existing by linting the pre-change file from `git show HEAD:`;
+  part of FF-OPS-1's known 132-error baseline, not introduced by this change). One NEW finding
+  (`react-hooks/refs`, ref read during a `useState` initializer) was caught and fixed by restructuring
+  to seed both the ref and the state from one plain local variable instead of reading `.current`
+  inside the initializer callback.
+- Standalone runtime verification (Node 24, which has native `CompressionStream`/`DecompressionStream`
+  matching the browsers this ships to) of the gzip transport contract mirrored from
+  `gzipTransport.ts`'s exact logic: gzip round-trip byte-exact match; a plain-JSON (uncompressed)
+  fallback file reads correctly via the same `decompressJson`; a corrupted gzip-magic-byte payload
+  throws cleanly (no crash, no silent garbage) so the caller's `.catch(() => ({}))` degrade path
+  engages as designed. **This surfaced and fixed a real bug**: the writer's `write()`/`close()`
+  promises were unguarded fire-and-forget, producing an unhandled-promise-rejection on a corrupted/
+  errored stream (crashes under Node's default policy; would be a silent console error in-browser) —
+  fixed by explicitly `.catch(() => {})`-guarding both, since the intended, catchable error already
+  surfaces via the readable side's `arrayBuffer()` await.
+- Standalone runtime verification of `appStateSchema.ts`'s new normalizers (bundled via `esbuild`,
+  dev-only throwaway tool, not added to `package.json`): well-formed manifest passes through intact;
+  `__proto__` prototype-pollution payload stripped with no pollution reaching `Object.prototype`; an
+  unknown shard-index key is dropped while known keys are kept (whitelist enforcement); a shard
+  `fileId` shaped like a path-traversal or query-injection string is dropped entirely (not smuggled
+  into a later `files/{id}` fetch URL) while a legitimately-shaped id is kept; missing/negative/non-
+  integer `schemaVersion` all default to `1`; an invalid `migration.status` value normalizes to
+  `undefined` rather than being coerced to a guess; `normalizeInvoices`/`normalizeExpenses` drop
+  invalid records and degrade non-array input to `[]`, matching the existing `normalizeAppState`
+  behavior they were extracted from.
+- Manual trace (no test framework exists in this repo — no jest/vitest config, confirmed via
+  `package.json`/directory scan) of the 5 spec migration cases against the code as written: new user
+  (no manifest, no legacy → `createFreshManifestAndShards`, shards created before manifest, same
+  ordering discipline); legacy-only → migrate (fresh claim path); already-migrated (`status ===
+  'complete'` → shards read directly, legacy ignored); interrupted-resume (`status === 'in_progress'`
+  → `fileStillResolves` skips already-written shards, re-verifies, finalizes); both-exist steady state
+  (manifest complete + legacy file both present → legacy ignored, not an error, per spec's explicit
+  distinction from FF-DATA-1's folder-rename case).
+
+**What still needs a live Drive account (owner/qa, per the ticket and the spec's §7.2 9-step drill,
+explicitly NOT run in this session):** the actual migration against a real pre-existing `app_data.json`
+(verify manifest + 4 shards created, `app_data.json` byte-unmodified same file id); idempotent re-run;
+simulated partial-interruption resume; the concurrent-migration-race self-cleanup (two sessions against
+the same fresh business); rollback to the pre-migration build; the dirty-save-granularity check via
+Drive revision history (only the touched shard's + manifest's `modifiedTime` change); per-shard
+conflict/merge with two real devices (different shards concurrently, then the same shard concurrently).
+
+**Status:** OPEN — @security-validator: review points from spec §7.3 (untrusted-input posture on the
+new normalizers — verified above; no new Drive scope/no new public-permission grants — confirmed by
+reading every new Drive API call added, all still `drive.file`-scoped `files.create`/`files.update`/
+`files.get`, no `permissions.*` call added anywhere; decompression sanity bound — implemented and
+verified above; the claim-manifest race-mitigation's DoS assumption — documented as an accepted
+single-owner-Drive-account assumption in `migrateLegacyToShards`'s docstring; no PII/token leakage in
+new `console.warn`/`console.error` calls — spot-checked, all new log lines reference file ids/shard
+names/counts only). @qa-validator: the live-drill plan above (BLOCKING per the Ticket Index) plus
+functional regression of ordinary CRUD flows (add/edit/delete expense/invoice/client/agent) against the
+new per-shard save path.
+
+#### [SIGN-OFF] qa-validator → team · 2026-07-13
+**Ticket:** FF-DATA-4 (4a–4e implemented; 4f skipped per owner decision)
+
+**Verification (Loop B evidence):** `npm run build` exit 0, bundle 477.57 KB gzip (under 500 KB budget, no new deps). I18n parity: en.json/he.json both 343 keys (✓ PASS). Migration logic: all 5 spec cases traced (new-user → createFreshManifestAndShards; legacy-only → migrateLegacyToShards; already-migrated → direct load; interrupted-resume → resume migration; both-exist → legacy ignored). Per-shard save: reference-inequality dirty-tracking (lines 895–907 FinanceContext.tsx), dirty shards accumulate in Set across debounce, only dirty shards uploaded, manifest written last (lines 635–679), failed shards re-queued. Normalizers: all new (normalizeInvoices/Expenses/Clients/BookingAgents, normalizeManifest) exported and tested, normalizeAppState remains composing wrapper. Security: no new OAuth scopes/permission grants confirmed by reading all Drive API calls (still `drive.file` only); decompression has 50 MB sanity bound; race-mitigation documented as single-owner-Drive assumption; no PII/token leakage in logging.
+
+**What requires live-drill (owner/qa only, per Ticket Index):** the 9-step spec §7.2 plan (pre-state, migrate, verify integrity, idempotent re-run, simulated partial-interruption, concurrent-migration race, rollback, dirty-save-granularity via Drive `modifiedTime`, per-shard conflict/merge on two devices). ARCHITECTURE.md §6/§7/§13 doc updates flagged as post-implementation follow-up (spec §8), not this ticket's critical path.
+
+**Status:** CLEAR — all verifiable criteria pass; build, i18n, migration, per-shard save, and normalizer logic all correct. **BLOCKING GATE:** owner/qa must run the live-drill plan (9 steps) before merge per ticket routing.
+
+#### [SIGN-OFF] security-validator → team · 2026-07-13
+**Ticket:** FF-DATA-4 (4a–4e reviewed against `git diff`; 4f confirmed absent from the diff)
+
+**Migration data-safety (`googleDrive.ts:migrateLegacyToShards`, ~line 482):** ordering verified by
+reading every line — claim (create `manifest.json.gz` first, `status: 'in_progress'`, empty shard
+index) → write shards one at a time in fixed order, PATCHing the manifest's shard index after EACH
+individual shard succeeds → verify (re-fetch + re-normalize every shard, compare record count +
+first/last id against the legacy-normalized source; any mismatch aborts without advancing status) →
+finalize (single `status: 'complete'` PATCH is the sole commit point). `app_data.json` is read only
+via the unchanged `fetchAppState` and is never passed to `deleteFile`/`saveAppState`/any write call
+anywhere in the diff — confirmed by grep across both changed files. Single-device
+interruption at any step leaves either an unclaimed state (safe, re-claims) or an accurate
+`in_progress` manifest that resumes correctly (`fileStillResolves` skips already-written shards).
+Steady-state per-shard save (`FinanceContext.tsx` `flushToDrive`) keeps the same discipline: entity
+shards in parallel, manifest written last only after every attempted shard write this cycle has
+resolved, failed shards re-queued into the durable `finance_pending_shards` set, succeeded shards
+never re-attempted. Confirmed correct.
+
+**Untrusted-input boundary:** preserved and, in one respect, hardened. Every new read path
+(`fetchManifest`, `fetchShard`) normalizes through `normalizeManifest`/the per-collection
+normalizers before use — no path returns raw Drive content to a caller unnormalized. Applicable
+`stripDangerousKeys` runs first in all four exported per-collection normalizers plus the new
+`normalizeManifest` (`appStateSchema.ts:289–421`). `toSafeId` (F-2) is untouched inside
+`normalizeInvoice` and still applies via `normalizeInvoices`. New: `isPlausibleDriveFileId`
+(`appStateSchema.ts:363`) whitelists `shards.<name>.fileId` to `[A-Za-z0-9_-]+` before it can ever
+reach a `files/{id}` fetch URL — a genuine addition to the trust boundary, not a gap.
+
+**gzip transport (`gzipTransport.ts`):** the unhandled-rejection fix is real — `writer.write()`/
+`close()` are explicitly `.catch(() => {})`-guarded (lines 60–61, 71–72) while the catchable error
+still surfaces via the readable-side `arrayBuffer()` await; verified this is the correct fix for the
+described bug class. A 50 MB bound is checked on both the raw downloaded blob (before decompression)
+and the decompressed buffer (before `JSON.parse`) — strictly better than today's zero-bound
+`response.json()` in `fetchAppState`. Caveat (advisory, not blocking): the bound is enforced only
+after `new Response(...).arrayBuffer()` has fully materialized the decompressed output in memory, so
+a high-ratio gzip bomb could still spike memory during decompression itself before the check fires —
+a true streaming byte-counter would close this fully. Low realistic severity given `drive.file` scope
+bounds the reachable threat actors to the account owner or an already-trusted shared-folder
+collaborator.
+
+**Scope/secrets:** `drive.file` OAuth scope unchanged (`auth.ts` has no diff, confirmed). No
+`permissions.*` Drive API call added anywhere in the diff (grepped). No secrets/tokens/connection
+strings in the diff (grepped). No PII in any new `console.warn`/`console.error` — all reference file
+ids, shard names, counts, and HTTP status only.
+
+**Advisory findings (non-blocking, self-healing — no permanent data loss traced in any case;
+proposing as follow-up tickets, not gating this one):**
+1. `migrateLegacyToShards`'s interim/finalize manifest writes use the raw unguarded `saveManifest`
+   (no version check), unlike the claim step (which has an explicit `listFileIdsByName` dedup check)
+   or the steady-state path (`saveManifestGuarded`). Two devices concurrently *resuming* the same
+   `in_progress` migration could clobber each other's shard-index progress (a "lost update" on the
+   manifest, not the shard content). Self-healing: `app_data.json` is untouched throughout, so any
+   dropped shard-index entry is simply rebuilt from the still-good legacy source on the next pass —
+   worst case is redundant writes/orphaned duplicate shard files, not lost data.
+2. `createFreshManifestAndShards` (brand-new-business bootstrap) has no equivalent claim-race dedup
+   check. Two devices bootstrapping the same brand-new business concurrently could each create a
+   manifest + 4 shards; `findFileId`'s first-match semantics pick one set going forward. Harmless (no
+   data exists yet for a brand-new business) but leaves an orphaned duplicate set in Drive.
+3. The claim-race abort logic (`migrateLegacyToShards` step 2) has a theoretical livelock edge: if
+   both racing devices' `listFileIdsByName` calls each observe the other's manifest before either
+   self-deletes, both could conclude they lost and both abort — self-resolving on a later retry, but
+   worth noting as a sharper edge than the spec's framing of "exactly one device loses."
+
+**Status:** CLEAR. Core data-safety invariants hold: `app_data.json` is never deleted/overwritten/
+moved in any path in this diff; migration ordering (claim → write → verify read-back → finalize) is
+correct and interruption-safe for the single-device case; the untrusted-input boundary is preserved
+and additionally hardened; OAuth scope and secret-handling are unchanged. The three advisory findings
+above are non-blocking (traced as self-healing, no permanent data loss) — flagging to the
+orchestrator as follow-up ticket proposals, not gating merge. Reiterating qa-validator's note above:
+merge remains gated on the owner's live-drill (9-step §7.2 plan), which is out of this gate's scope.
+
+#### [UPDATE] web-developer → @security-validator, @qa-validator · 2026-07-13
+**Ticket:** FF-DATA-4 — hardening security-validator's two advisory findings from the prior SIGN-OFF
+(finding #1: unguarded manifest writes in the migration; finding #2: no claim-race dedup in
+`createFreshManifestAndShards`). Finding #3 (theoretical mutual-abort livelock) left as-is per
+instruction — documented in a code comment, no logic change.
+
+Re-read the SIGN-OFF, the spec's §4/§7.1, and the full current `migrateLegacyToShards`/
+`createFreshManifestAndShards`/`saveManifestGuarded`/`mergeManifest` before touching anything.
+
+**Fix #1 — `googleDrive.ts:migrateLegacyToShards` manifest writes are now version-guarded
+(~line 720).** Added a tracked `manifestVersion` (seeded from `createGzipFile`'s returned `version`
+on a fresh claim, or a `getFileVersion` read on resume). Both manifest writes that used to call the
+raw unguarded `saveManifest` — the per-shard checkpoint PATCH inside the write loop (~line 810) and
+the finalize PATCH (~line 863) — now call `saveManifestGuarded` (the same guarded helper the
+steady-state save path already uses) with that tracked version. On a version mismatch (a concurrent
+resume on a second device wrote the manifest since we last read it), `saveManifestGuarded` triggers
+`mergeManifest` — re-reads each shared shard's actual current Drive version and unions the shard
+index — instead of one device's PATCH blindly overwriting the other's progress. The reconciled
+manifest is adopted back into the local `manifest` variable after each guarded write so later loop
+iterations, the verify step, and finalize all see the merged picture, not a stale local copy.
+Finalize's own guarded write is set up so this device's `'complete'` status always wins on a merge
+(`mergeManifest`'s `local.migration || remote.migration`, and `local` there is our just-verified
+complete manifest) while still picking up any shard-index progress a concurrent resumer made that we
+didn't have.
+
+**Preserved (traced, unchanged):** idempotency — the `alreadyWritten`/`fileStillResolves` skip in the
+write loop still reads from `manifest.shards[name]`, which now may be the merged result after a
+guarded write, so a resumed pass correctly skips shards another device already committed too, not
+just the ones this device wrote. Interruption-safety — a kill between `createGzipFile` and the
+guarded manifest write leaves the same safe state as before (shard file created but uncommitted,
+re-created on next resume; orphaned-but-harmless, same accepted class as today). Verify-before-
+finalize — step 4 unchanged, still runs against `legacyState` before any finalize write is attempted.
+`app_data.json` — never referenced by any write/delete call in this function, still true after the
+diff (re-confirmed by re-reading every line).
+
+**Fix #2 — `createFreshManifestAndShards` (~line 647) now has the same claim-race dedup as the
+migration.** Added a pre-check (`findFileId` for `manifest.json.gz`) immediately before doing any
+work — short-circuits to the existing manifest if another device's bootstrap already finished. Added
+the authoritative post-check immediately after this device creates its own manifest (mirrors the
+migration's step 2 exactly): re-list `manifest.json.gz` by exact name via the existing
+`listFileIdsByName`; if more than one now exists, this device lost the race — it deletes the
+manifest **and** the 4 shard files it just created (safe: a brand-new business has no data in them
+yet), re-finds the winning manifest, and returns that instead of leaving two live, independently-
+writable manifest+shard sets in the folder. (Migration's own claim-race guard only had to delete the
+manifest it created, since shards don't exist yet at that point in its ordering; this bootstrap
+creates shards *before* the manifest, so its cleanup additionally deletes those.)
+
+**Finding #3 — left as-is, comment only, no logic change.** Added a comment directly above the
+existing race-check block in `migrateLegacyToShards` (~line 763) documenting the mutual-abort
+livelock edge (both racing devices could each observe the other's manifest and both conclude they
+lost) as an accepted, self-resolving case — the next load on either device simply re-enters
+`initShardedAppState`, finds no manifest, and re-claims. No behavior changed for this finding, per
+instruction.
+
+**Evidence (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — exit 0, clean. Bundle `dist/assets/index-*.js` 1,640.85 kB
+  / **477.84 KB gzip** (prior FF-DATA-4 baseline was 477.57 KB gz; +~0.3 KB from the added guard
+  logic, no new dependency — `package.json`/`package-lock.json` untouched) — still under
+  `ops/PRODUCT.md`'s 500 KB gz budget.
+- `npx eslint src/services/googleDrive.ts` — clean (0 problems). One `no-useless-assignment` error was
+  caught and fixed during this pass (a final `manifestVersion = finalized.version` after finalize that
+  was never subsequently read — removed).
+- Manual trace of the concurrency scenarios (no live Drive account in this session, consistent with
+  every prior FF-DATA-4 session — same limitation noted on the original HANDOFF):
+  - **Interrupted-resume, two devices resuming the same `in_progress` migration concurrently:**
+    traced the case where both devices independently create a shard the manifest doesn't yet list
+    (different fileIds for the same shard name) and race their checkpoint writes. With the guard, the
+    first write succeeds (version matches); the second detects the version mismatch and merges via
+    `mergeManifest` instead of blindly overwriting — worst outcome is the same accepted "orphaned
+    duplicate shard file, no lost data" class the SIGN-OFF itself already called self-healing, but the
+    manifest's shard-index integrity itself (which was the actual finding) is now protected by the
+    version check rather than whichever device's PATCH lands last.
+  - **Concurrent fresh-bootstrap of the same brand-new business:** traced device A finishing first
+    (pre-check sees nothing, creates shards+manifest, post-check sees only its own manifest, returns
+    normally) and device B racing in behind it (pre-check may or may not see A's manifest depending on
+    timing; if it doesn't, B creates its own duplicate set, then its post-check sees 2 manifests,
+    deletes its own manifest+4 shards, re-finds A's manifest, and returns A's `{manifestFileId,
+    manifest}` — no orphaned *live* set, both devices converge on the same manifest).
+- Did not touch `FinanceContext.tsx`, `appStateSchema.ts`, `gzipTransport.ts`, or any other file this
+  session — confirmed via `git status` (only `googleDrive.ts` shows as modified beyond this board
+  edit). No migration ordering, file layout, per-shard dirty-tracking, or steady-state save-path
+  behavior changed — only the two flagged writes/one flagged function's race-safety.
+- No git commit made (per instructions).
+
+**Status:** OPEN — @security-validator: please confirm findings #1 and #2 are resolved per the above
+(both now route through the same version-guarded/reconcile-on-conflict discipline the steady-state
+path and the migration's own claim step already use). Finding #3 intentionally untouched, comment
+added. @qa-validator: no change to the live-drill plan's scope, but steps 5 (partial-interruption) and
+6 (concurrent-migration race) of the §7.2 plan now additionally exercise the guarded-manifest-write
+path — flagging in case the drill script wants to add a two-concurrent-resumers variant, not required
+to re-run the whole drill for this hardening pass alone.
+
+#### [SIGN-OFF] security-validator → team · 2026-07-13
+**Ticket:** FF-DATA-4 — focused re-review of the hardening pass (only `src/services/googleDrive.ts`
+changed since the prior SIGN-OFF; `appStateSchema.ts` re-read and confirmed to have no diff, so the
+untrusted-input boundary discussion below is a re-confirmation, not new ground).
+
+**Finding #1 — CLOSED.** Read `migrateLegacyToShards` end-to-end (~line 720). Both manifest writes
+that previously used the raw unguarded `saveManifest` now call `saveManifestGuarded` with a tracked
+`manifestVersion`: the per-shard checkpoint PATCH (line 810, inside the `SHARD_WRITE_ORDER` loop) and
+the finalize PATCH (line 863). `mergeManifest` (line 444) unions the shard index correctly on
+conflict: it takes the union of shard names from both `local`/`remote`, and for any name present in
+only one side it keeps that side's entry outright (line 464-466: `mergedShards[name] = l || r`) — a
+legitimately-written shard on either device is never dropped. Where both sides reference the *same*
+`fileId` for a shard, it re-reads the shard's actual current Drive version rather than trusting either
+cached copy (line 456) — correct, since Drive is ground truth. The reconciled manifest is adopted back
+into the loop's local `manifest` variable after each guarded write (lines 812-814), so later
+iterations' `alreadyWritten` skip-check, the verify step, and finalize all see the merged picture —
+confirmed a resumed pass correctly skips shards another device already committed, not just its own.
+
+**Finding #2 — CLOSED.** `createFreshManifestAndShards` (~line 647) now has: a pre-check
+(`findFileId` for `manifest.json.gz`, line 654) that short-circuits to the existing manifest before
+doing any work, and a post-check (`listFileIdsByName`, line 684) mirroring the migration's own
+claim-race guard. On losing the race, cleanup deletes **both** the duplicate manifest (line 692) and
+all 4 shard files it just created (line 693-695) via `Promise.all` — confirmed no orphan is left
+referenced by the returned result; the loser re-finds and returns the winner's manifest.
+
+**No regression to signed-off invariants (re-traced, not assumed):** `app_data.json`/`legacyFileId` is
+still never passed to `deleteFile`/any write call anywhere in this function — grepped and read every
+line. Verify-before-finalize (step 4, lines 822-841) is unchanged and still gates on `legacyState`
+captured at the top of the function, before any finalize write is attempted. Idempotency and
+interruption-safety hold under the new guard, as above. `drive.file` OAuth scope is unchanged (no
+`permissions.*` call added; no scope-related file touched). The untrusted-input boundary
+(`stripDangerousKeys` → `normalizeManifest`/`isPlausibleDriveFileId` for every `shards.<name>.fileId`,
+`appStateSchema.ts:363`) is untouched and still the sole path by which a manifest's shard-index reaches
+a Drive fetch URL — re-confirmed by reading the current file, which has no diff since the prior
+review. No secrets/tokens in the diff; the new/changed log lines (lines 656-660, 686-691) reference
+only folder/manifest ids and counts, no PII.
+
+**New finding, traced this session (advisory, non-blocking) — `mergeManifest`'s local-wins bias on
+`businessSettings`/`categories`/`migration` (lines 469-475) is applied identically whether "local" is
+a legitimately-editing device (steady-state path, where local-wins is correct) or a lagging
+migration-resume whose local manifest still carries the claim's placeholder
+`{...DEFAULT_BUSINESS_SETTINGS}` (set at the claim, line 753, and not replaced until this device's own
+finalize, line 849).** Traced data path: device A finishes migration (finalizes real
+businessSettings/categories into the manifest) while device B is still mid-loop resuming the same
+migration with a stale local manifest whose `businessSettings` is still the claim-time default. If B's
+next checkpoint write (line 810) conflicts against A's already-finalized manifest, `mergeManifest`
+picks B's (local) placeholder `businessSettings` over A's real ones (line 471,
+`mergeBusinessSettings` is local-wins except `docCounters`) and writes that back to Drive — and also
+reverts `migration.status` from `'complete'` back to `'in_progress'` (line 474: `local.migration ||
+remote.migration` prefers B's truthy in-progress block over A's complete one). In the common
+two-device case this is self-healing: B's own eventual finalize re-derives `businessSettings`/
+`categories`/`'complete'` from its own frozen `legacyState` snapshot (line 729), so the manifest
+converges back to correct. However, if a **third** device (or A itself, once past finalize) makes a
+*genuine* business-settings edit through the normal steady-state shard path in the window between A's
+finalize and B's finalize, B's stale-default checkpoint write can clobber that edit, and B's later
+finalize restores the *pre-migration* snapshot rather than the intervening edit — a real, if narrow
+(3-device-interleaving), permanent-loss path, not merely transient. Scope note: this requires multiple
+of the account owner's own devices racing in a specific order — same "single-owner-Drive" threat model
+already accepted for finding #3 and QA's live-drill framing; no external/untrusted party can trigger
+it, and invoices/expenses/clients/bookingAgents shard data (the actual financial records) are
+unaffected — only the `businessSettings`/`categories` singleton and the transient `migration.status`
+field are at risk. Proposing as a follow-up ticket (narrow the merge to only apply
+migration-placeholder `businessSettings` when `local.migration?.status === 'in_progress'` **and**
+`remote.migration?.status !== 'complete'`, otherwise prefer whichever side is `'complete'` for both
+`migration` and the settings/categories that travel with it) — not gating this ticket.
+
+**Status:** CLEAR. Findings #1 and #2 are genuinely resolved with no orphans and no shard-index data
+loss on either path. Core invariants signed off previously all re-verified intact. One new advisory
+finding above (narrow multi-device race, no financial-record data at risk, self-healing in the common
+case) — flagged as a follow-up ticket proposal, not blocking. Merge remains gated on the owner's
+live-drill per qa-validator's prior note; unaffected by this hardening pass.
 
 ### FF-DATA-2 — Report: app_data.json scaling — load time, big-JSON handling for real-time data
 
