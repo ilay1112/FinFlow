@@ -1152,6 +1152,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addInvoice = (invoice: Omit<Invoice, 'id' | 'total'>) => {
     const { total } = computeTotals(invoice.items, invoice.taxRate);
 
+    // FF-WEB-4 defense-in-depth: at most one non-Cancelled document may link back to a
+    // given source חשבון עסקה (TransactionInvoice) via sourceInvoiceId — e.g. only one
+    // קבלה per transaction invoice. The form hides/disables the "create receipt from
+    // this" action for an already-linked source, but this guards the direct-URL path
+    // (and any other caller) so a duplicate can never be persisted. A Cancelled prior
+    // document frees the source up for a new one.
+    if (invoice.sourceInvoiceId) {
+      const alreadyIssued = invoices.some(
+        inv => inv.sourceInvoiceId === invoice.sourceInvoiceId && inv.status !== 'Cancelled'
+      );
+      if (alreadyIssued) {
+        console.error('Refusing to add invoice: a non-Cancelled document already links to this source invoice.');
+        return;
+      }
+    }
+
     // Cash Law / multi-payment defense-in-depth: a payment-recording document
     // (Receipt / TaxInvoiceReceipt) that is being ISSUED (non-Draft) must carry
     // payment lines that sum to the total and keep cash under the dated cap. The

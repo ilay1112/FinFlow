@@ -48,6 +48,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DOC-1    | Update vault `ARCHITECTURE.md` §6.2/6.3/7.1-7.3/13 for the sharded storage model | backend-platform | — | **Done** — sections rewritten to as-built; fixed stale `FinFlow Data`→`tbiz Data` in Drive diagram |
 | FF-DOC-2    | Sweep remaining FinFlow→tbiz / `com.finflow.app` refs in vault `ARCHITECTURE.md` (title, §1-3) — rebrand only touched the repo | backend-platform | — | Backlog (low pri — vault is reference-only) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
+| FF-WEB-4    | Invoice creation: relabel payment section (תשלומים→אמצעי תשלום, form only); limit קבלה-from-חשבונית עסקה to one non-cancelled | web-developer | qa (+ tax-logic advisory) | In Validation — qa CLEAR (PDF label safe; 3-guard limit; cancelled frees source); staged on `feat/web-4-receipt-limit` for owner click-through. Advisory: limit rules out installment/partial-payment receipts (owner-accepted) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
 | FF-WEB-3    | Rebrand: app UI / SEO / email footer / package / README → tbiz | web-developer | design, seo, security | **Done** — all gates CLEAR; shipped (e82422b) |
 | FF-MKT-2    | Rebrand: landing page + domain (`finflow.co.il`→`tbiz.co.il`) → tbiz | marketing | design, seo | **Done** — gates CLEAR; shipped (e82422b) |
@@ -1617,6 +1618,77 @@ sign-off), tax-bookkeeper (confirm the note cannot be mistaken for a legal docum
 (informational-only, presence-gated, no numbering/total/VAT touch), but a retroactive design + tax
 glance is recommended before treating this as fully DoD-complete.
 **Status:** OPEN — retroactive Loop B glance recommended (design, tax-bookkeeper).
+
+---
+
+### FF-WEB-4 — Invoice creation: relabel payment section (form only); limit קבלה-from-חשבונית עסקה to one non-cancelled
+
+#### [HANDOFF] web-developer → qa-validator (tax-logic review requested), design-expert · 2026-07-15
+**Ticket:** FF-WEB-4
+Two changes to the invoice-creation flow, PDF/legal-document logic otherwise untouched:
+
+**1. Creation-form payment label** — the form's payment-method section (`InvoiceFormPage.tsx:518`,
+previously `t('invoices.payments')` = "תשלומים") now reads **"אמצעי תשלום"** via a new dedicated key
+`invoices.payment_section_label` (added he+en). `invoices.payments` itself is unchanged and still
+drives the PDF (`InvoiceTemplate.tsx:91`) and its own value ("תשלומים"/"Payments") — verified by grep,
+the PDF's usage line is untouched.
+
+**2. One קבלה per חשבונית עסקה** — a TransactionInvoice may have at most one **non-Cancelled** document
+linked back to it via `sourceInvoiceId`:
+- `InvoicesView.tsx` — new `activeReceiptSourceIds` set (sourceInvoiceId of every non-Cancelled
+  document), used only to hide the "create receipt from this" row action once populated. Left the
+  existing `settledSourceIds` (used for the נפרע/settled badge) untouched, per spec — it still counts
+  a Cancelled receipt as having settled the source, unchanged behavior.
+- `InvoiceFormPage.tsx` — `sourceAlreadyHasActiveDoc` derived check (create-from-source flow only, not
+  while editing): blocks `handleSubmit` early and disables the submit button, with an inline red
+  warning using the new `invoices.receipt_already_issued` key ("כבר הופקה קבלה עבור חשבונית עסקה זו" /
+  "A receipt has already been issued for this transaction invoice").
+- `FinanceContext.tsx` `addInvoice` — save-time guard (defense-in-depth for the direct-URL path
+  `?fromInvoice=<id>&as=Receipt`, bypassing the hidden button): refuses to persist a new document whose
+  `sourceInvoiceId` already has a non-Cancelled linked document; mirrors the existing
+  Cash-Law/`validatePayments` guard's console.error+return style already in that function.
+- Cancelling the previously-issued receipt (`status → 'Cancelled'`) frees the source up: both the row
+  action and the save guards re-evaluate off live `status`, no separate flag.
+- Did not touch document numbering, נפרע/settled display, or how a source is shown as settled.
+
+**Files changed:** `src/pages/InvoiceFormPage.tsx`, `src/pages/InvoicesView.tsx`,
+`src/context/FinanceContext.tsx`, `src/i18n/locales/he.json`, `src/i18n/locales/en.json`.
+
+**Evidence (Loop A):** `npm run build` (`tsc -b && vite build`) — exit 0, no errors. he.json/en.json
+both parse; key-parity check (recursive key diff) — 345/345 keys each side, zero one-sided keys.
+Grepped `invoices.payments` usage across `src/` — only remaining call site is
+`InvoiceTemplate.tsx:91` (PDF), confirmed unchanged. Traced manually against source: form section
+label reads `payment_section_label`; `activeReceiptSourceIds`/`sourceAlreadyHasActiveDoc`/
+`addInvoice` guard all filter on `status !== 'Cancelled'` consistently, so a Cancelled receipt
+correctly frees the חשבונית עסקה for a new one via button, direct URL, and the context save guard.
+Did not exercise interactively behind Google OAuth (no live session in this environment) — flagging
+for qa-validator to click through: (a) create a TransactionInvoice → issue one receipt → row action
+disappears + a second `?fromInvoice=…&as=Receipt` visit shows the blocked state and a disabled submit;
+(b) cancel that receipt → row action reappears → a new receipt saves cleanly.
+**Tax-logic note for qa-validator:** this touches Israeli document-chain logic (חשבונית עסקה → קבלה
+settlement); please fold in a tax-logic pass alongside the functional QA trace per the ticket.
+**Status:** OPEN — awaiting qa-validator trace + tax-logic review; design-expert advisory on the new
+inline warning/label only (no new screen).
+
+#### [SIGN-OFF] qa-validator → team · 2026-07-15
+**Ticket:** FF-WEB-4
+
+**Change 1 — Payment Section Label (form-only relabel):**
+- Build: `npm run build` exit 0, bundle 478.04 kB gzip (under budget). No new npm dependencies.
+- i18n parity: en.json/he.json both 345 keys, zero one-sided. New keys present: `payment_section_label` ("Payment Method" / "אמצעי תשלום"), `receipt_already_issued` ("A receipt has already been issued for this transaction invoice" / "כבר הופקה קבלה עבור חשבונית עסקה זו").
+- PDF safety: `invoices.payments` key unchanged ("Payments" / "תשלומים"). Form uses `payment_section_label` (line 546 InvoiceFormPage.tsx); PDF uses `invoices.payments` (line 91 InvoiceTemplate.tsx). Grep confirmed only two call sites: the form label and the PDF — both correct.
+
+**Change 2 — One Receipt Per Transaction Invoice (three-guard defense-in-depth):**
+- **Guard 1 (InvoicesView.tsx:140):** `activeReceiptSourceIds` set filters `status !== 'Cancelled'`, hides row action when source is populated. Verified: Cancelled receipts are excluded, so source frees up for re-issuance.
+- **Guard 2 (InvoiceFormPage.tsx:85, 301):** `sourceAlreadyHasActiveDoc` checks `!isEditing && status !== 'Cancelled'`. Blocks submit (line 301), disables button (line 853), displays warning (line 436). Verified: only applies to create-from-source, not to edits; existing receipts can be edited/updated.
+- **Guard 3 (FinanceContext.tsx:1161):** Save-time guard catches direct-URL path (`?fromInvoice=<id>&as=Receipt`). Refuses to persist if source already has non-Cancelled document; mirrors existing Cash-Law guard's error-log-and-return style.
+- **Cancelled receipt frees source:** All three guards re-evaluate off live `status !== 'Cancelled'`; no separate flag. Cancelling prior receipt removes it from activeReceiptSourceIds, flips sourceAlreadyHasActiveDoc to false, unblocks addInvoice.
+
+**Interactive verification not run (behind OAuth):** Manual logic trace confirms the three guards chain correctly. Flagging for owner/qa click-through: (a) issue receipt from TransactionInvoice → row action disappears + direct-URL attempt shows warning + disabled submit; (b) cancel receipt → row action reappears + new receipt saves.
+
+**Tax-logic advisory (informational, not blocking):** The one-receipt-per-source limit blocks legitimate partial-payment workflows where a customer pays in installments across multiple receipts against the same חשבונית עסקה. However, `PaymentLine` supports recording multiple payment methods within a single receipt (e.g., ₪1000 cash + ₪1000 card), so full payment in one receipt with multiple lines is supported. The restriction is a deliberate owner-requested product decision (per ticket), not a data-model gap. Owners using true installment billing should be aware: either take full payment in one receipt with multiple payment lines, or issue each installment against a separate transaction invoice.
+
+**Status:** CLEAR — all verifiable criteria pass. Build, i18n parity, PDF safety, and three-guard logic all correct. Cancelled receipts properly free sources. Editing is not falsely blocked. Direct-URL path defended.
 
 ---
 

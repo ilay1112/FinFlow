@@ -132,6 +132,15 @@ export default function InvoicesView() {
     invoices.map(i => i.sourceInvoiceId).filter((id): id is string => !!id)
   );
 
+  // FF-WEB-4 — a חשבון עסקה may only have ONE non-Cancelled document issued from it
+  // (e.g. one קבלה). Cancelling that document frees the source up for a new one, so
+  // this set (unlike settledSourceIds above, which is intentionally left as-is for the
+  // נפרע/settled badge) excludes Cancelled documents. Used only to hide/disable the
+  // "create receipt from this" row action.
+  const activeReceiptSourceIds = new Set(
+    invoices.filter(i => i.sourceInvoiceId && i.status !== 'Cancelled').map(i => i.sourceInvoiceId as string)
+  );
+
   // Analytics — money KPIs count accounting documents only; a חשבון עסקה
   // (TransactionInvoice) is a demand/quote and never contributes to a money total
   // (it still appears as a row, and shows נפרע once a receipt is issued for it).
@@ -370,7 +379,10 @@ export default function InvoicesView() {
                           // Issue a receipt (קבלה) from a transaction invoice (חשבון עסקה):
                           // opens a new document prefilled with this one's client, items,
                           // price and booking agent — the user only picks a payment method.
-                          ...(invoice.documentType === 'TransactionInvoice' ? [{
+                          // FF-WEB-4 — hidden once a non-Cancelled document has already
+                          // been issued from this חשבון עסקה (at most one allowed;
+                          // Cancelling that document frees it up for a new one).
+                          ...(invoice.documentType === 'TransactionInvoice' && !activeReceiptSourceIds.has(invoice.id) ? [{
                             key: 'receipt',
                             icon: ReceiptText,
                             label: t('invoices.create_receipt_from'),

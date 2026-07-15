@@ -79,6 +79,13 @@ export default function InvoiceFormPage() {
     ? invoices.find(inv => inv.id === sourceInvoiceId) ?? null
     : null;
 
+  // FF-WEB-4 — at most one non-Cancelled document may be issued from a given source
+  // חשבון עסקה (TransactionInvoice). Only relevant on the create-from-source flow (not
+  // while editing); a Cancelled prior receipt frees the source up again.
+  const sourceAlreadyHasActiveDoc =
+    !isEditing && !!sourceInvoice &&
+    invoices.some(inv => inv.sourceInvoiceId === sourceInvoice.id && inv.status !== 'Cancelled');
+
   const isPatur = businessSettings.type === 'EsekPatur';
 
   // 2a — Esek Patur may NOT issue a tax invoice (חשבונית מס). Restrict the
@@ -287,6 +294,14 @@ export default function InvoiceFormPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // FF-WEB-4 defense-in-depth: block a second non-Cancelled document from being
+    // issued against the same source חשבון עסקה even if the disabled button was
+    // bypassed (e.g. a stale render). FinanceContext.addInvoice re-checks as a final
+    // guard against a direct-URL create.
+    if (sourceAlreadyHasActiveDoc) {
+      return;
+    }
+
     let currentClientId = formData.clientId;
     let currentClientName = '';
     // Snapshot of the customer's tax ID at issue time (1b) — see below.
@@ -416,6 +431,17 @@ export default function InvoiceFormPage() {
             </div>
           )}
 
+          {/* FF-WEB-4 — a חשבון עסקה may only have ONE non-Cancelled document issued
+              from it; block the create (and explain why) if one already exists. */}
+          {sourceAlreadyHasActiveDoc && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-4">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-800 leading-relaxed">
+                {t('invoices.receipt_already_issued')}
+              </p>
+            </div>
+          )}
+
           {/* Client */}
           <div className="space-y-1.5 relative" ref={dropdownRef}>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.client')}</label>
@@ -515,7 +541,9 @@ export default function InvoiceFormPage() {
           {showsPayments && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.payments')}</label>
+                {/* FF-WEB-4 — creation-form-only label ("אמצעי תשלום"); the PDF and any
+                    other consumer of invoices.payments are untouched. */}
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('invoices.payment_section_label')}</label>
                 {hasCashLine && (
                   <span className={`text-[11px] font-bold ${paymentValidation.cashOverCap ? 'text-red-600' : 'text-slate-500'}`}>
                     {t('invoices.max_cash', { cap: formatCurrency(cashCap) })}
@@ -822,7 +850,7 @@ export default function InvoiceFormPage() {
           type="submit"
           className="flex-1 h-12 font-bold"
           onClick={handleSubmit}
-          disabled={paymentsBlockSave}
+          disabled={paymentsBlockSave || sourceAlreadyHasActiveDoc}
         >
           {isEditing
             ? t('common.save')
