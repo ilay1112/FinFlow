@@ -28,22 +28,29 @@ import {
   FileText,
   UserPlus
 } from 'lucide-react';
-import { 
-  startOfMonth, 
-  endOfMonth, 
-  subMonths, 
-  isWithinInterval, 
-  parseISO, 
-  startOfYear, 
+import {
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  isWithinInterval,
+  parseISO,
+  startOfYear,
   endOfYear,
   format,
   eachMonthOfInterval,
-  subYears
+  subYears,
+  isValid,
+  startOfDay,
+  endOfDay,
+  subDays,
+  differenceInCalendarDays,
+  isSameDay
 } from 'date-fns';
 import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
 import { cn } from '../utils/utils';
 
@@ -53,7 +60,7 @@ import { useCurrencyFormatter } from '../utils/format';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b'];
 
-type TimeRange = 'CurrentMonth' | 'CurrentYear';
+type TimeRange = 'CurrentMonth' | 'CurrentYear' | 'Custom';
 
 interface TrendBadgeProps {
   change: number;
@@ -69,9 +76,11 @@ const TrendBadge = ({ change, reverse = false, timeRange, isRtl, t }: TrendBadge
   const colorClass = isNeutral ? "text-slate-400" : isPositive ? "text-green-600" : "text-red-600";
   const Icon = isNeutral ? Minus : isPositive ? ArrowUpRight : ArrowDownRight;
 
-  const comparisonText = timeRange === 'CurrentMonth' 
-    ? t('dashboard.vs_last_month') 
-    : t('dashboard.vs_last_year');
+  const comparisonText = timeRange === 'CurrentMonth'
+    ? t('dashboard.vs_last_month')
+    : timeRange === 'CurrentYear'
+    ? t('dashboard.vs_last_year')
+    : t('dashboard.vs_previous_period');
 
   return (
     <p className={cn("text-[10px] md:text-xs flex items-center mt-1 font-medium", colorClass)}>
@@ -87,11 +96,16 @@ export default function DashboardView() {
   const isRtl = i18n.language === 'he';
   const { expenses, invoices, activeBusiness } = useFinance();
   const [timeRange, setTimeRange] = useState<TimeRange>('CurrentMonth');
+  // Custom range inputs, defaulted to the current month so the date pickers open
+  // with a sensible pre-filled window rather than being blank.
+  const [customFrom, setCustomFrom] = useState<string>(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [customTo, setCustomTo] = useState<string>(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'));
 
   // Calculate Date Intervals based on selection
-  const { start, end, prevStart, prevEnd } = useMemo(() => {
+  const { start, end, prevStart, prevEnd, isCustomRangeValid } = useMemo(() => {
     const now = new Date();
     let start: Date, end: Date, prevStart: Date, prevEnd: Date;
+    let isCustomRangeValid = true;
 
     switch (timeRange) {
       case 'CurrentYear':
@@ -100,6 +114,29 @@ export default function DashboardView() {
         prevStart = startOfYear(subYears(now, 1));
         prevEnd = endOfYear(subYears(now, 1));
         break;
+      case 'Custom': {
+        const parsedFrom = customFrom ? parseISO(customFrom) : null;
+        const parsedTo = customTo ? parseISO(customTo) : null;
+        const valid = !!(parsedFrom && parsedTo && isValid(parsedFrom) && isValid(parsedTo) && parsedFrom <= parsedTo);
+        isCustomRangeValid = valid;
+
+        if (valid && parsedFrom && parsedTo) {
+          start = startOfDay(parsedFrom);
+          end = endOfDay(parsedTo);
+        } else {
+          // Guard: invalid/empty range (e.g. from > to, or a field cleared mid-edit)
+          // falls back to the current month so the tiles/charts never render
+          // against a nonsensical or reversed interval.
+          start = startOfMonth(now);
+          end = endOfMonth(now);
+        }
+
+        // Previous period = the equal-length window immediately preceding [start, end].
+        const rangeDays = differenceInCalendarDays(end, start) + 1;
+        prevEnd = endOfDay(subDays(start, 1));
+        prevStart = startOfDay(subDays(prevEnd, rangeDays - 1));
+        break;
+      }
       case 'CurrentMonth':
       default:
         start = startOfMonth(now);
@@ -108,8 +145,8 @@ export default function DashboardView() {
         prevEnd = endOfMonth(subMonths(now, 1));
         break;
     }
-    return { start, end, prevStart, prevEnd };
-  }, [timeRange]);
+    return { start, end, prevStart, prevEnd, isCustomRangeValid };
+  }, [timeRange, customFrom, customTo]);
 
   // Filter Data
   const currentExpenses = expenses.filter(e => isWithinInterval(parseISO(e.date), { start, end }));
@@ -138,6 +175,17 @@ export default function DashboardView() {
   // Resolve the brackets against the selected period's tax year explicitly, so the
   // date-keyed config returns that year's table rather than defaulting to "today".
   const estimatedTax = calculateProgressiveTax(taxableIncome, `${end.getFullYear()}-12-31`);
+
+  // The progressive brackets are ANNUAL. For Custom ranges that don't happen to span
+  // a full calendar year, running this period's income through annual brackets
+  // understates the marginal rate (same pre-existing quirk as the Current Month tile,
+  // just more visible here since the range is arbitrary). Rather than silently produce
+  // a nonsensical "annualized" number, flag the tile explicitly as a period estimate
+  // whenever Custom is active and the range isn't exactly Jan 1 - Dec 31 of one year.
+  // FLAG FOR OWNER/TAX REVIEW: this is a simplification, not a true annualized estimate;
+  // a רו"ח / יועץ מס should confirm the desired treatment for partial-year custom ranges.
+  const isFullCalendarYearRange = isSameDay(start, startOfYear(start)) && isSameDay(end, endOfYear(end));
+  const isTaxPeriodEstimate = timeRange === 'Custom' && !isFullCalendarYearRange;
 
   const calculateChange = (current: number, previous: number) => {
 
@@ -195,18 +243,54 @@ export default function DashboardView() {
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('dashboard.subtitle')}</p>
         </div>
 
-        <div className="bg-white p-1 md:p-1.5 rounded-xl border shadow-sm flex items-center gap-1 w-full lg:w-auto">
-          {(['CurrentMonth', 'CurrentYear'] as TimeRange[]).map((range) => (
-            <Button
-              key={range}
-              variant={timeRange === range ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setTimeRange(range)}
-              className="flex-1 lg:flex-none text-[10px] md:text-xs h-10 md:h-8 px-4"
-            >
-              {range === 'CurrentMonth' ? t('dashboard.current_month') : t('dashboard.current_year')}
-            </Button>
-          ))}
+        <div className="flex flex-col gap-2 w-full lg:w-auto lg:items-end">
+          <div className="bg-white p-1 md:p-1.5 rounded-xl border shadow-sm flex flex-wrap items-center gap-1 w-full lg:w-auto">
+            {(['CurrentMonth', 'CurrentYear', 'Custom'] as TimeRange[]).map((range) => (
+              <Button
+                key={range}
+                variant={timeRange === range ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setTimeRange(range)}
+                className="flex-1 lg:flex-none min-w-0 text-[10px] md:text-xs h-10 md:h-8 px-2 md:px-4"
+              >
+                {range === 'CurrentMonth' ? t('dashboard.current_month') : range === 'CurrentYear' ? t('dashboard.current_year') : t('dashboard.custom')}
+              </Button>
+            ))}
+          </div>
+
+          {timeRange === 'Custom' && (
+            <div className="flex flex-col gap-1 w-full lg:w-auto lg:items-end">
+              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border shadow-sm w-full lg:w-auto">
+                <label htmlFor="dashboard-custom-from" className="text-[10px] md:text-xs font-medium text-slate-500 shrink-0">
+                  {t('expenses.from')}
+                </label>
+                <Input
+                  id="dashboard-custom-from"
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="h-9 md:h-8 text-xs flex-1 min-w-[130px]"
+                />
+                <label htmlFor="dashboard-custom-to" className="text-[10px] md:text-xs font-medium text-slate-500 shrink-0">
+                  {t('expenses.to')}
+                </label>
+                <Input
+                  id="dashboard-custom-to"
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="h-9 md:h-8 text-xs flex-1 min-w-[130px]"
+                />
+              </div>
+              {!isCustomRangeValid && (
+                <p className="text-[10px] md:text-xs text-red-600 font-medium px-1">
+                  {t('dashboard.custom_range_invalid')}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -299,8 +383,15 @@ export default function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="text-xl md:text-2xl font-black text-slate-900">{formatCurrency(estimatedTax)}</div>
-            <Badge variant="outline" className="mt-2 font-mono text-[9px] md:text-[10px] bg-indigo-50/50 border-indigo-100 text-indigo-700">
-              {t('dashboard.progressive_tax')}
+            <Badge
+              variant="outline"
+              title={isTaxPeriodEstimate ? t('dashboard.tax_period_estimate_desc') : t('dashboard.progressive_tax_desc')}
+              className={cn(
+                "mt-2 font-mono text-[9px] md:text-[10px] whitespace-nowrap truncate max-w-full",
+                isTaxPeriodEstimate ? "bg-amber-50/50 border-amber-200 text-amber-700" : "bg-indigo-50/50 border-indigo-100 text-indigo-700"
+              )}
+            >
+              {isTaxPeriodEstimate ? t('dashboard.tax_period_estimate') : t('dashboard.progressive_tax')}
             </Badge>
           </CardContent>
         </Card>
