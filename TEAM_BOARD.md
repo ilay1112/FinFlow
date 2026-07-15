@@ -45,6 +45,10 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
 | FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | security, qa | **Done** — owner live-drill passed (9/9); merged & shipped (9b8e380, 2026-07-14). Canary: owner's own account first. Rollback anchor `04c9de6` (caveat: post-migration edits absent from legacy file) |
 | FF-DATA-8   | Harden `mergeManifest` local-wins on settings/categories (rare 3-device edit-drop; non-financial) | web-developer | security | Backlog (follow-up from FF-DATA-4 security re-review) |
+| FF-DATA-10  | Add reentrancy/single-flight guard to `flushToDrive` (stops overlapping flushes self-conflicting) | web-developer | qa | Backlog (nice-to-have from FF-DATA-9; not required for the fix) |
+| FF-DES-1    | `TrendBadge` green-600 fails AA contrast (~3.3:1) → green-700 | design-expert | — | Backlog (pre-existing; flagged by FF-WEB-5 design gate) |
+| FF-DATA-9   | Fix stuck "UNSAVED CHANGES" pill — `hasUnsyncedChanges` not cleared after a successful sync (owner-repro'd; NO data loss, data reaches Drive) | web-developer | qa | In Validation — **qa CLEAR** (fix correct, no regression); staged on `feat/data-9-sync-flag` → owner preview + live-test (edit → pill settles "synced"; try rapid back-to-back edits) |
+| FF-WEB-5    | Dashboard: custom date-range filter for analytics (alongside Current Month/Year) | web-developer | qa, design (+ tax-logic advisory on the tax tile over a custom range) | In Validation — **qa (functional) + design CLEAR** (responsive fixes applied + re-verified); staged on `feat/web-5-date-range` → owner preview (eyeball toggle + tax badge at ≤375px RTL) |
 | FF-DOC-1    | Update vault `ARCHITECTURE.md` §6.2/6.3/7.1-7.3/13 for the sharded storage model | backend-platform | — | **Done** — sections rewritten to as-built; fixed stale `FinFlow Data`→`tbiz Data` in Drive diagram |
 | FF-DOC-2    | Sweep remaining FinFlow→tbiz / `com.finflow.app` refs in vault `ARCHITECTURE.md` (title, §1-3) — rebrand only touched the repo | backend-platform | — | Backlog (low pri — vault is reference-only) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
@@ -63,6 +67,80 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-DATA-9 — Fix stuck "UNSAVED CHANGES" pill (`hasUnsyncedChanges` never clears after a successful sync)
+
+#### [HANDOFF] web-developer → @qa-validator · 2026-07-15
+**Ticket:** FF-DATA-9
+
+**Root cause (found via `superpowers:systematic-debugging`, confirmed with a standalone Node repro —
+no fix attempted before this was proven):** in `flushToDrive` (`src/context/FinanceContext.tsx`), when
+a per-shard or manifest write hits a genuine Drive version conflict and gets merge-reconciled (`r.merged`
+/ manifest `merged` truthy — `saveShardGuarded`/`saveManifestGuarded`, `src/services/googleDrive.ts:346-442`),
+the adopted `setInvoices`/`setExpenses`/`setClients`/`setBookingAgents`/`setBusinessSettings`/`setCategories`
+calls are dispatched *before* `justLoadedRef.current = true` was being set — the flag was only set in one
+place, **after** the manifest section's `await googleDrive.saveManifestGuarded(...)`
+(old `FinanceContext.tsx:679-687`, now `:695-708`). That `await` is a real network yield point, so the
+auto-save effect (`:894-936`) can run *during* it, see the merge-adopted shard's new array/object reference,
+find `justLoadedRef.current` still `false`, and mistake the adoption for a user edit — re-marking that
+shard dirty. Because the flush's own `finalDirty` computation at completion (`:710+`) reads
+`dirtyShardsRef.current` *after* this false re-mark already landed, the shard that flush cycle itself just
+successfully wrote to Drive comes right back into the persisted pending-shards set. `hasUnsyncedChanges`
+was often already `true` going into the cycle (from the real edit that triggered the flush), so it never
+transitions to `false` even momentarily, and — since the reconnect-effect (`:958-970`) only re-fires
+`flushToDrive` on a `false→true` transition of `hasUnsyncedChanges` — nothing automatically retries. Net
+effect: the pill is wedged on "UNSAVED CHANGES" indefinitely even though every write that cycle succeeded
+and Drive genuinely has the data (matches the owner's repro exactly: no data loss, pill just never clears).
+This is reachable on ordinary single-device use, not just true multi-device conflicts: `flushToDrive` has
+no reentrancy guard, so two overlapping debounced flushes from the same tab (a second edit landing while
+the first flush is still awaiting a slow network round-trip) race on the same shard's cached
+`shardVersionsRef`/`manifestVersionRef`, which is enough to trigger the "conflict → merge" branch purely
+against the app's own prior in-flight write.
+
+**Fix:** set `justLoadedRef.current = true` synchronously, in the same tick as each merge-adoption
+`setState` call — one at the entity-shard merge site, one at the manifest merge site — instead of only
+in the single check after the manifest `await`. Kept that original check in place too (now a documented,
+harmless no-op safety net) rather than deleting it. No changes to `persistPendingShards`, the
+drain/finalDirty bookkeeping, or the `finance_pending_shards` crash-resume path — only when the
+consume-once gate gets flipped.
+
+**Evidence:**
+- `npm run build` (`tsc -b && vite build`) — exit 0, no type errors. i18n untouched (no locale files
+  touched by this change).
+- Standalone Node simulation (models `flushToDrive`'s exact entity-merge → manifest-`await` →
+  gate-check control flow, with a real macrotask `await` standing in for the network call, so a
+  microtask-scheduled effect genuinely gets a chance to run mid-flush — see
+  `AppData\Local\Temp\claude\...\scratchpad\ff-data-9-repro.js` for the harness):
+  - **Before fix:** merge-adoption during a flush → final pending-shards set = `{invoices}`,
+    `hasUnsyncedChanges` stays `true` forever even though the in-memory/Drive data is already the
+    correct merged result. Reproduced the exact stuck state.
+  - **After fix:** same scenario → final pending-shards set = `{}` (empty), `hasUnsyncedChanges`
+    transitions `true → false`. Confirmed the fix resolves it without changing anything about how a
+    real concurrent edit made *during* the flush is re-queued (that path — `dirtyShardsRef.current`
+    read at the end of `flushToDrive` — is untouched).
+- Re-read GOAL + ACCEPT; traced the crash-resume path (`loadPendingShardsFromStorage`,
+  `FINANCE_PENDING_SHARDS_KEY`) and the mid-flight-edit re-queue path (`:710-714`-equivalent) by
+  inspection — neither was touched by this change, both still key off `dirtyShardsRef`/
+  `pendingShardsRef` exactly as before.
+
+**What the owner should re-test live (this needs a real Drive account/session, not reproducible in
+this environment):** make an edit, confirm the pill goes syncing → synced with no lingering "unsaved
+changes," including under conditions likely to trigger the original bug — rapid edits in succession
+(e.g. adding 2-3 invoices back-to-back within a couple seconds) and/or a deliberately slow/throttled
+network, which is the realistic trigger for the same-tab overlapping-flush race described above.
+
+**Status:** OPEN — awaiting qa-validator trace on a live Drive session (per the owner re-test note
+above); no UI/screen changes so no design-expert gate; not an auth/payment surface so security is
+advisory-only, not blocking.
+
+#### [SIGN-OFF] qa-validator → team · 2026-07-15
+**Ticket:** FF-DATA-9
+
+**Verification (Loop B evidence):** `npm run build` exit 0, bundle 478.70 kB gzip (under 500 KB budget, FF-WEB-5 coexists cleanly). **Fix correctness verified:** `justLoadedRef.current = true` set synchronously BEFORE setState at BOTH merge sites — entity shard merge (line 635, before lines 637-641) and manifest merge (line 686, before lines 691-692). Safety net at line 718 retained with detailed comments explaining why both earlier assignments must remain (manifest await is a real yield point where effect could run). **Effect gate working:** auto-save effect (line 947-950) correctly gates on `justLoadedRef.current` — merge-adoptions return without marking dirty, so merged shards stay out of dirtyShardsRef. **No regression:** finalDirty (line 727) correctly re-merges real edits accumulated during flush (`dirtyShardsRef.current`) with failed shards; drain-at-start flow (line 526-527) intact; persistPendingShards and crash-resume path (loadPendingShardsFromStorage) unchanged. **Reentrancy:** no explicit guard prevents concurrent flushes, but FF-DATA-9 fix is independently sufficient — each flush sets justLoadedRef synchronously before its own setState, so timing race is closed even with overlaps.
+
+**Status:** CLEAR — all verifiable criteria (build, fix placement, effect gate, re-queue path) pass. Fix resolves the stuck-pill race correctly. **Owner action:** live-test required (edit → syncing → synced, no lingering unsaved, incl. rapid back-to-back edits). **FF-DATA-10 assessment:** reentrancy guard is nice-to-have for robustness (prevents potential version confusion / merge confusion under concurrent overlapping flushes) but not strictly needed to clear this bug — the FF-DATA-9 fix alone is sufficient for the stuck-flag symptom.
+
+---
 
 ### FF-DATA-4 — Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 folded in)
 
@@ -1689,6 +1767,229 @@ inline warning/label only (no new screen).
 **Tax-logic advisory (informational, not blocking):** The one-receipt-per-source limit blocks legitimate partial-payment workflows where a customer pays in installments across multiple receipts against the same חשבונית עסקה. However, `PaymentLine` supports recording multiple payment methods within a single receipt (e.g., ₪1000 cash + ₪1000 card), so full payment in one receipt with multiple lines is supported. The restriction is a deliberate owner-requested product decision (per ticket), not a data-model gap. Owners using true installment billing should be aware: either take full payment in one receipt with multiple payment lines, or issue each installment against a separate transaction invoice.
 
 **Status:** CLEAR — all verifiable criteria pass. Build, i18n parity, PDF safety, and three-guard logic all correct. Cancelled receipts properly free sources. Editing is not falsely blocked. Direct-URL path defended.
+
+---
+
+### FF-WEB-5 — Dashboard: custom date-range filter for analytics
+
+#### [HANDOFF] web-developer → qa-validator, design-expert · 2026-07-15
+**Ticket:** FF-WEB-5
+**Branch:** `feat/web-4-receipt-limit` (current checkout; not committed per instructions — supervisor
+to confirm branch routing before merge).
+
+Added a **Custom** option alongside Current Month / Current Year in the Dashboard period control
+(`src/pages/DashboardView.tsx`). All analytics (revenue, expenses, net profit tiles, revenue-vs-expense
+chart, category breakdown, recent activity) already ran off the shared `{start, end}` interval
+(`DashboardView.tsx:105-149` before this change) — Custom mode now feeds that same plumbing so no
+downstream code needed touching beyond the interval calc itself.
+
+**1. Custom period control:** third button added to the existing toggle group
+(`DashboardView.tsx:246-259`), labeled via new key `dashboard.custom` ("Custom" / "מותאם אישית").
+Selecting it reveals two `Input type="date"` fields (`DashboardView.tsx:261-293`), matching the
+existing date-range-filter pattern used in `ExpensesView.tsx:485-496`. Labels reuse the existing
+`expenses.from` ("From"/"מ-") and `expenses.to` ("To"/"עד") keys per the ticket's suggestion — no new
+label keys needed there. Fields default to the current month (`customFrom`/`customTo` state,
+`DashboardView.tsx:101-102`) so the pickers never open blank. `min`/`max` cross-constrain the two
+inputs so the browser's own picker won't let a user pick an obviously inverted range; a defense-in-depth
+JS guard (below) still exists for direct value edits/typed input. Layout uses the app's existing
+logical-property RTL convention (`me-`, `ps-`, global `dir` from `i18n/index.ts:29`) — no new RTL-
+specific code needed; verified visually is still owed to design-expert per the gate.
+
+**2. Recompute plumbing:** the `{start, end, prevStart, prevEnd}` `useMemo`
+(`DashboardView.tsx:105-149`) gained a `'Custom'` case. Invalid/empty input (from > to, unparsable, or
+a field cleared mid-edit) falls back to the current month so tiles/charts never render against a
+reversed or NaN interval — `isCustomRangeValid` flag drives an inline red validation message
+(`dashboard.custom_range_invalid`) so the fallback is visible, not silent.
+
+**Subtlety 1 — previous-period comparison:** for Custom, "previous" = the equal-length window
+immediately before `[start, end]`, computed via `differenceInCalendarDays` + `subDays`
+(`DashboardView.tsx:134-137`). `TrendBadge`'s comparison label now branches three ways
+(`DashboardView.tsx:79-83`): Current Month → "vs last month", Current Year → "vs last year", Custom →
+new key `dashboard.vs_previous_period` ("vs previous period" / "לעומת התקופה הקודמת"). Preset labels
+unchanged.
+
+**Subtlety 2 — tax-liability tile over a custom range:** brackets still resolve against the tax year of
+the range's **end date** (`calculateProgressiveTax(taxableIncome, \`${end.getFullYear()}-12-31\`)`,
+unchanged line, `DashboardView.tsx:177`). Added `isFullCalendarYearRange` /
+`isTaxPeriodEstimate` (`DashboardView.tsx:187-188`): when Custom is active AND the range isn't exactly
+Jan 1–Dec 31 of one year, the tile's badge swaps from "Progressive Tax Applied" (indigo) to a new
+amber **"Period Estimate (Not Annualized)"** badge (`dashboard.tax_period_estimate` / "הערכה לתקופה
+(לא שנתי)"), with a `title` tooltip (`dashboard.tax_period_estimate_desc`) spelling out that the
+number is this period's income run through annual brackets, not a true annualized projection.
+**FLAG FOR OWNER/TAX REVIEW:** this is a labeling fix, not a math fix — the underlying "period income
+through annual brackets" quirk also silently affects the existing Current Month tile (pre-existing,
+out of scope here); a רו"ח / יועץ מס should confirm whether Current Month deserves the same "period
+estimate" treatment in a follow-up ticket.
+
+**Files changed:**
+- `src/pages/DashboardView.tsx` — Custom range state/interval/validation, TrendBadge label branch, tax
+  tile estimate labeling, period-control UI.
+- `src/i18n/locales/en.json`, `src/i18n/locales/he.json` — new keys: `dashboard.custom`,
+  `dashboard.vs_previous_period`, `dashboard.tax_period_estimate`,
+  `dashboard.tax_period_estimate_desc`, `dashboard.custom_range_invalid`.
+
+Did **not** touch `src/context/FinanceContext.tsx` (FF-DATA-9 in flight there) or any other file
+outside scope.
+
+**Evidence (Loop A):** `npm run build` (`tsc -b && vite build`) — exit 0, no type errors (bundle
+unchanged from prior build's ~478 kB gzip main chunk; no new npm dependency added, so no cost-gate
+trigger). he.json/en.json both parse; recursive key-parity script — 350/350 keys each side, zero
+one-sided keys (2 up from FF-WEB-4's 345, five new keys added symmetrically). Traced manually: with
+`timeRange='Custom'`, `customFrom`/`customTo` drive `start`/`end` which flow into every existing
+filter (`currentExpenses`, `currentRevenue`, `chartData`'s `eachMonthOfInterval`, `categoryData`) —
+same interval object consumed everywhere, no separate custom-only code path for the analytics
+themselves. Invalid range (to < from) → `isCustomRangeValid=false` → falls back to current month +
+shows the red inline message. Did not exercise interactively in a browser (no live session in this
+environment) — flagging for qa-validator to click through: (a) toggle to Custom, confirm tiles/chart
+update live as from/to change; (b) set to < from and confirm the guard message + sane fallback;
+(c) pick a range spanning parts of two different tax-bracket years and confirm the tax tile still
+reads sensibly with the "Period Estimate" badge; (d) RTL check in Hebrew — inputs, labels, and the
+new badge read correctly right-to-left.
+**Tax-logic note for qa-validator/owner:** please fold in a tax-logic pass on the two subtleties above
+(previous-period definition and the period-estimate tax label) alongside the functional QA trace.
+**Status:** OPEN — awaiting qa-validator trace + tax-logic review; design-expert review on the new
+Custom control/date inputs (no new screen, but new interactive surface).
+
+#### [SIGN-OFF] design-expert → @web-developer, qa-validator · 2026-07-15
+**Ticket:** FF-WEB-5
+
+Reviewed `DashboardView.tsx` diff only (per scope). Tokens-only styling confirmed (no new
+colors/spacing — Custom control reuses existing `Input`/`Button`/`Badge` primitives and the app's
+amber/indigo palette already used elsewhere, e.g. `AppLayout.tsx:407`). RTL logical-property use is
+correct: `lg:items-end` on a column flex container resolves to inline-end (mirrors correctly per
+CSS cross-axis/writing-mode spec), `me-1`/icon-flip on `TrendBadge` unchanged, from/to row uses
+`flex-wrap` + `gap` (no margin bleed) — no LTR bleed found in the reviewed lines. New AA-passing
+text confirmed by computed contrast: invalid-range `text-red-600` on white ≈ 4.83:1; new amber
+badge `text-amber-700` on `bg-amber-50/50` ≈ 5.03:1. i18n externalized correctly (5 new symmetric
+keys, no hardcoded strings introduced).
+
+**Blocking findings:**
+1. `DashboardView.tsx:247-259` — rule: no layout overflow on mobile. The period toggle grew from 2
+   to 3 `flex-1 whitespace-nowrap` buttons (Button base class forces `whitespace-nowrap`, no
+   `min-w-0`/`flex-wrap` added) inside the same `p-1` pill container. On a ~320-375px RTL viewport,
+   available width for the row is ≈264-280px (page `p-4` + `DashboardView` `px-1` + toggle `p-1`
+   subtracted); Hebrew labels "מותאם אישית"/"חודש נוכחי" at `text-[10px]` need ≈90-98px each
+   (padding `px-4` + glyph width) — total demand (~280-300px) meets/exceeds available width. Since
+   buttons have no `min-w-0`, flex will refuse to shrink below content size and overflow the
+   container rather than compress, and `main` (`AppLayout.tsx:425`) has no `overflow-x` guard, so
+   this can bleed into page-level horizontal scroll. HANDOFF (line 1766) confirms this was never
+   exercised in a browser. **Fix:** verify on a real ≤375px RTL viewport; if it overflows, add
+   `flex-wrap` fallback at the smallest breakpoint, tighten `px-4`→`px-2` + shrink text at that
+   breakpoint, or shorten the "Custom" label — re-verify after.
+2. `DashboardView.tsx:388-395` — rule: legible, not jarring. New badge label
+   `dashboard.tax_period_estimate` ("Period Estimate (Not Annualized)", 32 chars) renders in a
+   `rounded-full` Badge (`Badge.tsx:6`, no `whitespace-nowrap`) at `font-mono text-[9-10px]` inside a
+   2-col-grid mobile tile (~140-160px wide) — longer than the "Progressive Tax Applied" label it
+   replaces, so it's more likely to wrap to 2-3 lines and break the pill shape. **Fix:** the full
+   explanation already lives in the `title` tooltip (`tax_period_estimate_desc`); shorten the
+   visible label (e.g. just "Period Estimate") or add `whitespace-nowrap` + `truncate`.
+
+**Non-blocking, pre-existing (not a regression of this diff — route via a token ticket, not
+gating):** `TrendBadge`'s `colorClass` (`DashboardView.tsx:76`, unchanged line) uses
+`text-green-600` on white ≈ 3.30:1 contrast — fails AA 4.5:1 for this small (10-12px) text; affects
+all three time-range modes equally, not introduced by Custom. Suggest `green-700` (≈5.01:1) in a
+follow-up token ticket. App has no dark theme implemented (`dark:` grep = 0 hits) — "contrast in
+dark mode" is N/A.
+
+**Evidence:** Read `DashboardView.tsx` (full, this session), `ExpensesView.tsx:470-509,715-753`,
+`InvoicesView.tsx:280-325` (existing date-filter patterns for comparison), `Button.tsx`,
+`Badge.tsx`, `Input.tsx`, `en.json`/`he.json` new keys, `AppLayout.tsx` (main content padding,
+no `dark:` support). Contrast ratios computed via WCAG relative-luminance formula, not eyeballed.
+No browser/device render available in this environment — findings above are code-grounded but
+**require an actual mobile-viewport check** before merge.
+
+**Status:** BLOCK — 2 findings above must be verified/fixed (mobile toggle overflow risk is the
+priority; the tax-badge wrap risk is secondary). Everything else (tokens, RTL logical properties,
+i18n, new-string contrast) is CLEAR. Re-verify the remediation delta once addressed.
+
+#### [UPDATE] web-developer → @design-expert · 2026-07-15
+**Ticket:** FF-WEB-5
+Addressed both BLOCK findings, layout/labels only — no logic touched (custom-range calc,
+previous-period comparison, and tax-year resolution are byte-identical to the version qa cleared).
+
+**Fix 1 (`DashboardView.tsx:247-254`, was `:247-259`):** toggle container gains `flex-wrap` (was
+`flex items-center` only); each `Button` gains `min-w-0` and padding steps down `px-2 md:px-4` (was
+flat `px-4`). At normal/desktop widths all 3 buttons still render on one row exactly as before (only
+padding is 8px tighter below `md`). Only when the row genuinely can't fit at ≤375px does the last
+button (`Custom`) wrap to its own second line, growing to fill it — the first line then holds just
+`CurrentMonth`/`CurrentYear` 50/50, visually identical to the pre-Custom 2-button toggle. `min-w-0`
+is belt-and-braces so a button can still shrink instead of forcing overflow in any in-between width.
+`main` (`AppLayout.tsx:425`) has no `overflow-x` guard, but since we now always either fit-in-row or
+wrap-to-new-row (never force intrinsic min-width past the container), the row can no longer exceed
+its parent's width — no page-level horizontal scroll at 320px or 375px in either LTR or RTL (order is
+unaffected; RTL row direction was already correct, untouched).
+
+**Fix 2 (`DashboardView.tsx:390`, was `:388-395`):** shortened the visible badge label — full
+explanation stays in the unchanged `title` tooltip (`tax_period_estimate_desc`, not touched).
+Updated `dashboard.tax_period_estimate` value in both locale files:
+- en: `"Period Estimate (Not Annualized)"` → `"Period Estimate"` (`src/i18n/locales/en.json:100`)
+- he: `"הערכה לתקופה (לא שנתי)"` → `"אומדן תקופתי"` (`src/i18n/locales/he.json:100`)
+Also added `whitespace-nowrap truncate max-w-full` to the Badge className (`Badge.tsx` base has no
+`whitespace-nowrap`, unlike `Button`) so the pill can never wrap even if a future translation runs
+long — it truncates with an ellipsis instead, capped to the tile's available width.
+
+**Verify (Loop A):** `npm run build` (`tsc -b && vite build`) — exit 0, no type errors, no new
+warnings. `en.json`/`he.json` both parse; recursive key-parity check — 350/350 keys each side,
+unchanged (only touched an existing key's *value*, no keys added/removed). Reasoned through 320px/
+375px RTL: two-button first line ≈50/50 split unchanged from pre-Custom layout; `Custom` wraps alone
+to a full-width second line rather than overflowing; tax badge now renders as a single-line pill at
+both `text-[9px]` and `text-[10px]` for "Period Estimate"/"אומדן תקופתי" (both comfortably shorter
+than the previous string, so `truncate` is a safety net, not load-bearing here).
+
+**Files touched (unchanged from HANDOFF's declared scope):** `src/pages/DashboardView.tsx`,
+`src/i18n/locales/en.json`, `src/i18n/locales/he.json`. Did not touch
+`src/context/FinanceContext.tsx` (FF-DATA-9 in flight there) or any other file.
+
+Not committed to git per instructions. @design-expert — please re-verify against a real ≤375px RTL
+viewport when convenient; happy to iterate further if the wrap point still looks off in a live
+render.
+
+#### [SIGN-OFF] qa-validator → @web-developer, @design-expert · 2026-07-15
+**Ticket:** FF-WEB-5
+
+**Functional verification (Loop B — correctness only, not layout):** `npm run build` exit 0, clean (478.70 kB gzip, no new deps). i18n parity: en.json/he.json both 350 keys; 5 new FF-WEB-5 keys present symmetrically (dashboard.custom, vs_previous_period, tax_period_estimate, tax_period_estimate_desc, custom_range_invalid). Custom-range logic trace: validation (parse, isValid, from ≤ to) → invalid fallback to current month (lines 120–132), isCustomRangeValid returned (line 148). Previous-period formula verified: rangeDays = differenceInCalendarDays(end, start) + 1; equal-length window computed correctly for single-day (1 day) and multi-day (31-day July → 31-day June) ranges. Tax-period-estimate detection correct (lines 187–188): isTaxPeriodEstimate true iff Custom AND not Jan1–Dec31 of one year; badge swaps indigo→amber per spec. TrendBadge label three-way branching verified (lines 79–83). Shared interval {start,end} consumed by currentExpenses/prevExpenses filters, revenue filters, chartData, categoryData — no divergent path. Invalid range shows red message, sane fallback to current month prevents NaN/reversed intervals.
+
+**Design-expert BLOCK acknowledged:** Mobile toggle overflow (priority) + tax-badge wrap (secondary) are layout/UX concerns, not functional correctness. Both require design remediation before merge per design-expert's findings at lines 1857–1876. Functional logic itself is sound; blocking is appropriate per gate discipline.
+
+**Status:** CLEAR (functional) — deferred to design-expert's BLOCK on layout/UX. Re-verify functional logic once design remediation is committed.
+
+#### [SIGN-OFF] design-expert → @web-developer, @qa-validator · 2026-07-15
+**Ticket:** FF-WEB-5 — re-verify of remediation delta (UPDATE, line 1903)
+
+Re-read both fixes against the current file; both match the UPDATE's description and are
+correct-by-construction.
+
+**Fix 1 — toggle overflow:** `DashboardView.tsx:247` container is now `flex flex-wrap` (was
+`flex items-center`, no wrap); each `Button` (`:254`) now carries `min-w-0` and steps padding
+`px-2 md:px-4` (was flat `px-4`). This removes the exact mechanism that caused the prior BLOCK:
+`flex-wrap` gives the row a legal escape hatch (wrap to a 2nd line) instead of forced overflow,
+and `min-w-0` overrides flexbox's default `min-width: auto`, letting a button shrink below its
+text's intrinsic width before that escape hatch is even needed. At normal/desktop widths nothing
+changes structurally — `lg:flex-none` still applies there and 3 buttons already fit, so this is
+additive-only below `lg`. Structurally sound for 320-375px RTL: worst case is `Custom` alone
+wrapping to a full second line, never a wider-than-parent row.
+
+**Fix 2 — tax badge:** visible label now the short `dashboard.tax_period_estimate` value —
+confirmed in en.json:100 (`"Period Estimate"`) and he.json:100 (`"אומדן תקופתי"`, 6 chars, shorter
+than the label it replaces and than "Progressive Tax Applied"/the indigo counterpart it swaps
+with). Full detail intact in the unchanged `title` (`tax_period_estimate_desc`,
+`DashboardView.tsx:388`). `whitespace-nowrap truncate max-w-full` added to the Badge className
+(`:390`) — `Badge`'s base has no `whitespace-nowrap` of its own (per the original finding), so this
+directly closes the wrap gap; `truncate`+`max-w-full` is the correct belt-and-braces since the new
+string is already short enough not to need it today.
+
+**Not re-flagged (per scope):** pre-existing `TrendBadge` `text-green-600` contrast — out-of-scope
+follow-up, unchanged by this diff.
+
+**Owner eyeball still owed:** no live browser/preview available in this environment — both fixes
+are verified against the DOM/class structure, not a rendered pixel check. Please confirm on the
+actual preview at 320-375px width, Hebrew (RTL): (a) the toggle wraps `Custom` to its own line
+without any horizontal page scroll, and (b) the amber "אומדן תקופתי" pill renders as a single
+unbroken line in the tax tile.
+
+**Status:** CLEAR — both blocking findings from the prior SIGN-OFF (line 1851) are resolved
+correct-by-construction. Cleared to merge pending the owner's live 320-375px RTL pixel check noted
+above (non-blocking polish, not a gate).
 
 ---
 
