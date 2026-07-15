@@ -619,6 +619,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           };
           if (r.merged) {
             anyMergedAdoption = true;
+            // FF-DATA-9 — this flag MUST be set synchronously, in the same tick as
+            // the setState call below, and BEFORE the manifest section's `await`
+            // a few lines down. `justLoadedRef` is consumed by the auto-save effect
+            // on whatever render this setState produces; if that render's effect
+            // runs (which it can, since the manifest write below is a real network
+            // await — a genuine yield point) while this flag is still false, the
+            // effect mistakes this merge-adoption for a user edit and re-marks the
+            // shard dirty, so the pending-shard set that THIS successful flush
+            // computes at the end never reaches empty, wedging the sync pill on
+            // "unsynced" forever even though Drive already has the correct data
+            // (see FF-DATA-9). Setting it here, before any subsequent await, closes
+            // that race — the same guard the load path already relies on, just
+            // timed correctly for the mid-flush adoption case too.
+            justLoadedRef.current = true;
             switch (r.name) {
               case 'invoices': setInvoices(r.merged as Invoice[]); break;
               case 'expenses': setExpenses(r.merged as Expense[]); break;
@@ -664,6 +678,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           manifestRef.current = merged ?? nextManifest;
           if (merged) {
             anyMergedAdoption = true;
+            // FF-DATA-9 — see the matching comment at the entity-shard merge site
+            // above: set this synchronously, in the same tick as the setState
+            // calls below, rather than relying solely on the check after this
+            // try/catch (defense-in-depth against a future await landing between
+            // here and there).
+            justLoadedRef.current = true;
             for (const name of ENTITY_SHARD_ORDER) {
               const entry = merged.shards[name];
               if (entry) shardVersionsRef.current[name] = entry.version;
@@ -684,6 +704,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // user edit: gate the auto-save effect so it doesn't re-dirty/re-flush off
         // these setState calls (the merged data is already durably saved by the
         // guarded save(s) above, so skipping the follow-up auto-save loses no write).
+        // FF-DATA-9 — both merge sites above already set this flag synchronously,
+        // in the same tick as their setState calls, so the flag is already true by
+        // the time we get here; this assignment is now a redundant no-op safety
+        // net (harmless — setting `true` to `true`), kept for defense-in-depth.
+        // Do NOT remove the two earlier assignments and rely on only this one: the
+        // manifest write above is a real `await`, and a merge-adoption setState
+        // dispatched before that await can have its effect run DURING the await,
+        // while this line hasn't executed yet — that reopens the FF-DATA-9 race
+        // (a merge-adopted shard gets mistaken for a user edit and never drains
+        // from the pending set, wedging the sync pill on "unsynced" forever even
+        // though Drive already has the correct data).
         justLoadedRef.current = true;
       }
 
