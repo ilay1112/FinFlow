@@ -325,6 +325,13 @@ export default function InvoiceFormPage() {
       ? formData.documentType
       : allowedDocumentTypes[0];
 
+    // FF-WEB-6 defense-in-depth: a חשבונית עסקה (TransactionInvoice) is a non-accounting
+    // demand/quote — its "paid" state is the נפרע/settled badge (a receipt issued from
+    // it), not status Paid. Never persist status: 'Paid' for this doc type even if a
+    // stale value slipped through (e.g. a legacy record or a bypassed dropdown).
+    const status: Invoice['status'] =
+      documentType === 'TransactionInvoice' && formData.status === 'Paid' ? 'Sent' : formData.status;
+
     // Cash Law gating (defense-in-depth behind the disabled button): block the save
     // of an issued (non-Draft) payment-recording document whose lines don't balance
     // or whose cash breaches the cap. FinanceContext re-validates as a final guard.
@@ -372,7 +379,7 @@ export default function InvoiceFormPage() {
       dueDate: formData.dueDate,
       items: processedItems,
       taxRate: activeTaxRate,
-      status: formData.status,
+      status,
       // Only persist an allocation number for document types that can legally carry
       // one; a trimmed empty string is stored as undefined.
       allocationNumber: isTaxInvoiceType ? (formData.allocationNumber.trim() || undefined) : undefined,
@@ -508,7 +515,18 @@ export default function InvoiceFormPage() {
             <select
               className="flex h-12 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               value={formData.documentType}
-              onChange={(e) => setFormData({ ...formData, documentType: e.target.value as DocumentType })}
+              onChange={(e) => {
+                const newType = e.target.value as DocumentType;
+                setFormData(prev => ({
+                  ...prev,
+                  documentType: newType,
+                  // FF-WEB-6: a חשבונית עסקה (TransactionInvoice) is a non-accounting
+                  // demand/quote — its "paid" state is the נפרע/settled badge (a receipt
+                  // issued from it), not status Paid. Coerce away from Paid the moment
+                  // the user switches into this doc type.
+                  status: newType === 'TransactionInvoice' && prev.status === 'Paid' ? 'Sent' : prev.status,
+                }));
+              }}
             >
               {allowedDocumentTypes.map(type => (
                 <option key={type} value={type}>{t(DOCUMENT_TYPE_LABELS[type])}</option>
@@ -657,7 +675,12 @@ export default function InvoiceFormPage() {
               >
                 <option value="Draft">{t('invoices.draft')}</option>
                 <option value="Sent">{t('invoices.sent')}</option>
-                <option value="Paid">{t('invoices.paid')}</option>
+                {/* FF-WEB-6: a חשבונית עסקה (TransactionInvoice) is a non-accounting
+                    demand/quote — its "paid" state is the נפרע/settled badge (a receipt
+                    issued from it), not status Paid. Hide the Paid option for it. */}
+                {formData.documentType !== 'TransactionInvoice' && (
+                  <option value="Paid">{t('invoices.paid')}</option>
+                )}
                 <option value="Overdue">{t('invoices.overdue')}</option>
               </select>
             </div>

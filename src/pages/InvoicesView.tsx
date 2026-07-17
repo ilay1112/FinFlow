@@ -366,7 +366,12 @@ export default function InvoicesView() {
                       <TableCell className="font-bold text-slate-900 whitespace-nowrap">{formatCurrency(invoice.total)}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          {getStatusBadge(invoice.status)}
+                          {/* FF-WEB-6: a חשבונית עסקה (TransactionInvoice) is a non-accounting
+                              demand/quote — its "paid" state is the נפרע/settled badge below,
+                              not status Paid. Never render the Paid/שולם badge for it, including
+                              legacy rows still stored with status: 'Paid' (display-only). */}
+                          {!(invoice.documentType === 'TransactionInvoice' && invoice.status === 'Paid') &&
+                            getStatusBadge(invoice.status)}
                           {invoice.documentType === 'TransactionInvoice' && settledSourceIds.has(invoice.id) && (
                             <Badge variant="success" className="gap-1">
                               <CheckCircle className="h-3 w-3" /> {t('invoices.settled')}

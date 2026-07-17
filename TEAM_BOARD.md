@@ -47,6 +47,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DATA-8   | Harden `mergeManifest` local-wins on settings/categories (rare 3-device edit-drop; non-financial) | web-developer | security | Backlog (follow-up from FF-DATA-4 security re-review) |
 | FF-DATA-10  | Add reentrancy/single-flight guard to `flushToDrive` (stops overlapping flushes self-conflicting) | web-developer | qa | Backlog (nice-to-have from FF-DATA-9; not required for the fix) |
 | FF-DES-1    | `TrendBadge` green-600 fails AA contrast (~3.3:1) → green-700 | design-expert | — | Backlog (pre-existing; flagged by FF-WEB-5 design gate) |
+| FF-WEB-6    | חשבונית עסקה should not carry a "Paid/שולם" status (non-accounting demand doc; payment = נפרע). Default→Sent, drop Paid option + badge for TransactionInvoice | web-developer | qa (strict) | **Done** — strict qa CLEAR (other doc types byte-for-byte unchanged); pushed straight to main per owner |
 | FF-DATA-9   | Fix stuck "UNSAVED CHANGES" pill — `hasUnsyncedChanges` not cleared after a successful sync (owner-repro'd; NO data loss, data reaches Drive) | web-developer | qa | In Validation — **qa CLEAR** (fix correct, no regression); staged on `feat/data-9-sync-flag` → owner preview + live-test (edit → pill settles "synced"; try rapid back-to-back edits) |
 | FF-WEB-5    | Dashboard: custom date-range filter for analytics (alongside Current Month/Year) | web-developer | qa, design (+ tax-logic advisory on the tax tile over a custom range) | In Validation — **qa (functional) + design CLEAR** (responsive fixes applied + re-verified); staged on `feat/web-5-date-range` → owner preview (eyeball toggle + tax badge at ≤375px RTL) |
 | FF-DOC-1    | Update vault `ARCHITECTURE.md` §6.2/6.3/7.1-7.3/13 for the sharded storage model | backend-platform | — | **Done** — sections rewritten to as-built; fixed stale `FinFlow Data`→`tbiz Data` in Drive diagram |
@@ -68,7 +69,99 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
 
-### FF-DATA-9 — Fix stuck "UNSAVED CHANGES" pill (`hasUnsyncedChanges` never clears after a successful sync)
+### FF-WEB-6 — חשבונית עסקה (TransactionInvoice) must not show a "Paid/שולם" status badge
+
+#### [HANDOFF] web-developer → @qa-validator · 2026-07-17
+**Ticket:** FF-WEB-6
+**Branch:** none created — changes are uncommitted on `main` per instructions (not committed; not
+staged to a feature branch). Supervisor to confirm branch routing before merge.
+
+A **חשבונית עסקה (TransactionInvoice)** is a non-accounting demand/quote — its "paid" state is the
+existing **נפרע/settled** badge (driven by `settledSourceIds`, i.e. a receipt was issued from it), not
+the invoice-style `status: 'Paid'`. Removed the `Paid` concept from this doc type in three places:
+
+**1. Form status dropdown** (`src/pages/InvoiceFormPage.tsx:676-684`): the `Paid` `<option>` is now
+conditionally rendered — `{formData.documentType !== 'TransactionInvoice' && <option value="Paid">…}`.
+Draft/Sent/Overdue remain for every doc type, including TransactionInvoice.
+
+**2. Coerce away from Paid (two places, per ticket):**
+- **On doc-type switch** (`InvoiceFormPage.tsx:518-529`): the Document Type `<select>`'s `onChange`
+  now computes the next `documentType` and `status` together — if the newly selected type is
+  `TransactionInvoice` and the current `status` is `'Paid'`, it flips to `'Sent'`; otherwise `status`
+  is left untouched. This is the path that matters for a brand-new document, since a fresh invoice
+  defaults to `documentType: isPatur ? 'Receipt' : 'TaxInvoice'` + `status: 'Paid'`
+  (`InvoiceFormPage.tsx:159,167`, deliberately left unchanged) — switching the dropdown to חשבון עסקה
+  now clears Paid immediately instead of leaving a stale value the (now Paid-less) select can't
+  display.
+- **Submit-time safeguard** (`InvoiceFormPage.tsx:328-333`): `handleSubmit` computes a local
+  `status` — `documentType === 'TransactionInvoice' && formData.status === 'Paid' ? 'Sent' :
+  formData.status` — and persists that (`InvoiceFormPage.tsx:382`, `status,` not `formData.status`).
+  This is what actually fixes **editing a legacy TransactionInvoice already stored with
+  `status: 'Paid'`**: opening it for edit seeds `formData.status` from `editingInvoice.status`
+  (`:129`, still `'Paid'`, since the select can't offer that option to re-pick it) — without this
+  safeguard, saving without touching the status field would silently round-trip `Paid` back to
+  storage. Now any save of a TransactionInvoice normalizes it to `Sent`.
+- Left the `Paid` defaults for a fresh Receipt/TaxInvoice/TaxInvoiceReceipt
+  (`InvoiceFormPage.tsx:151,167`) and the create-from-source flow's `status: 'Paid'` (`:151`)
+  completely untouched, per ticket instruction — those doc types keep the Paid concept.
+
+**3. List badge** (`src/pages/InvoicesView.tsx:367-379`): the status-badge cell now reads
+`{!(invoice.documentType === 'TransactionInvoice' && invoice.status === 'Paid') &&
+getStatusBadge(invoice.status)}`. This is display-only (no data migration) and handles **both** the
+new-data path (status can no longer be persisted as Paid, per #2 above) and **legacy rows already
+stored with `status: 'Paid'`** — the condition keys off the stored value directly, so an old
+TransactionInvoice row with `status: 'Paid'` never renders `getStatusBadge`'s Paid branch
+(`InvoicesView.tsx:213`, success/`CheckCircle`/"Paid") regardless of when it was written. Draft, Sent,
+Overdue and Cancelled are unaffected — the guard only strips the `Paid` case, so those still render via
+`getStatusBadge` as before. The נפרע/settled badge (`InvoicesView.tsx:375-379`, keyed off
+`settledSourceIds`) is completely separate code and was not touched.
+
+**Not changed (per ticket):** money totals (`acct()`/`isAccountingDocument` already exclude
+TransactionInvoice — `InvoicesView.tsx:148`, `DashboardView.tsx:121,125,159`, `TaxesView.tsx:18` all
+untouched), נפרע/settled logic, document numbering, the FF-WEB-4 one-receipt guard
+(`InvoiceFormPage.tsx:82-87,297-303`). Did **not** touch `src/context/FinanceContext.tsx` — no change
+there was needed; `status` is just a field on the `Invoice` object the form already controls.
+**Out-of-scope note (not touched, flagging for awareness):** `BookingAgentsView.tsx:454` and
+`ClientsView.tsx:366` also render a small `inv.status === 'Paid' ? success : outline` badge in their
+per-entity invoice lists, and `InvoicesView.tsx:412` shows a "Refund" row action when
+`invoice.status === 'Paid'` — none of these three were named in the ticket's scope, so left as-is; a
+legacy TransactionInvoice with stored `status: 'Paid'` would still show a Refund action there and (in
+those two other views) a small Paid badge. Flagging as a possible FF-WEB-7 follow-up if the owner wants
+full consistency.
+
+**Files changed:**
+- `src/pages/InvoiceFormPage.tsx` — status dropdown (hide Paid for TransactionInvoice), doc-type
+  `onChange` coercion, `handleSubmit` submit-time coercion + persisted `status` variable.
+- `src/pages/InvoicesView.tsx` — status-badge cell guard for TransactionInvoice + Paid.
+- No i18n keys added (reused `invoices.paid`, `invoices.draft`, `invoices.sent`, `invoices.overdue`,
+  `invoices.settled` — all pre-existing).
+
+**Evidence (Loop A):** `npm run build` (`tsc -b && vite build`) — exit 0, no type errors. en.json/
+he.json both parse; recursive key-parity script — 345/345 keys each side, zero one-sided keys (no new
+keys, as expected). Traced manually against all four ACCEPT scenarios:
+(a) **New TransactionInvoice, no Paid, never submits Paid** — picking TransactionInvoice from the
+Document Type dropdown removes the Paid `<option>` and (per `onChange` above) flips a pre-existing
+`'Paid'` status to `'Sent'` in the same state update; `handleSubmit`'s local `status` computation is a
+second, independent guard even if that update were somehow bypassed.
+(b) **List row shows נפרע, never שולם, but still shows Draft/Sent/Overdue** — the badge-cell guard
+only strips the `Paid` case; `getStatusBadge('Draft'|'Sent'|'Overdue'|'Cancelled')` renders unchanged,
+and the נפרע badge condition (`settledSourceIds.has(invoice.id)`) is untouched and independent of
+`status`.
+(c) **Legacy TransactionInvoice with stored `status: 'Paid'`** — list badge is hidden by the same
+guard (keys off stored `invoice.status`, no migration needed); if opened for edit and re-saved without
+touching the status field, `handleSubmit`'s safeguard normalizes it to `Sent` going forward.
+(d) **Receipt/TaxInvoice/TaxInvoiceReceipt unchanged** — every new conditional is gated on
+`documentType === 'TransactionInvoice'` specifically; the Paid option, the Paid defaults at form init,
+and `getStatusBadge`'s Paid branch all remain exactly as before for every other doc type.
+Did not exercise interactively in a browser this session (no live session) — flagging for
+qa-validator to click through: (1) new invoice, switch Document Type to חשבון עסקה, confirm Paid
+disappears from Status and no stale Paid persists on save; (2) open an existing legacy
+TransactionInvoice seeded with `status: 'Paid'` (or hand-edit one in the data) and confirm the list
+badge is gone and re-saving flips it to Sent; (3) confirm a Receipt/TaxInvoice still shows שולם when
+Paid, both in the list and the form dropdown.
+**Status:** OPEN — awaiting qa-validator trace (strict, this goes straight to main).
+
+
 
 #### [HANDOFF] web-developer → @qa-validator · 2026-07-15
 **Ticket:** FF-DATA-9
