@@ -45,7 +45,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
 | FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | security, qa | **Done** — owner live-drill passed (9/9); merged & shipped (9b8e380, 2026-07-14). Canary: owner's own account first. Rollback anchor `04c9de6` (caveat: post-migration edits absent from legacy file) |
 | FF-DATA-8   | Harden `mergeManifest` local-wins on settings/categories (rare 3-device edit-drop; non-financial) | web-developer | security | Backlog (follow-up from FF-DATA-4 security re-review) |
-| FF-DATA-11  | **Plan:** split the invoices shard further into per-document-type files (TaxInvoice / Receipt / TaxInvoiceReceipt / TransactionInvoice) — design + honest cost/benefit vs FF-DATA-4 entity split | backend-platform | — | In Progress (design/plan) |
+| FF-DATA-11  | **Plan:** split the invoices shard further into per-document-type files (TaxInvoice / Receipt / TaxInvoiceReceipt / TransactionInvoice) — design + honest cost/benefit vs FF-DATA-4 entity split | backend-platform | — | **Done** — plan delivered (`ops/research/FF-DATA-11-invoice-type-split-plan.md`); verdict: **not recommended** (whole shard already ~34KB gzip, split saves only ~24KB/edit, costs +8.1% dictionary overhead + 4x load fan-out); recommends FF-DATA-5 instead |
 | FF-DATA-10  | Add reentrancy/single-flight guard to `flushToDrive` (stops overlapping flushes self-conflicting) | web-developer | qa | Backlog (nice-to-have from FF-DATA-9; not required for the fix) |
 | FF-DES-1    | `TrendBadge` green-600 fails AA contrast (~3.3:1) → green-700 | design-expert | — | Backlog (pre-existing; flagged by FF-WEB-5 design gate) |
 | FF-WEB-6    | חשבונית עסקה should not carry a "Paid/שולם" status (non-accounting demand doc; payment = נפרע). Default→Sent, drop Paid option + badge for TransactionInvoice | web-developer | qa (strict) | **Done** — strict qa CLEAR (other doc types byte-for-byte unchanged); pushed straight to main per owner |
@@ -2084,6 +2084,64 @@ unbroken line in the tax tile.
 **Status:** CLEAR — both blocking findings from the prior SIGN-OFF (line 1851) are resolved
 correct-by-construction. Cleared to merge pending the owner's live 320-375px RTL pixel check noted
 above (non-blocking polish, not a gate).
+
+---
+
+### FF-DATA-11 — Plan: split the invoices shard further into per-document-type files
+
+#### [HANDOFF] backend-platform → @orchestrator, @product-manager · 2026-07-18
+**Ticket:** FF-DATA-11
+Design/plan only, no product code changed. Full plan at
+`ops/research/FF-DATA-11-invoice-type-split-plan.md`.
+
+**Verdict: not worth doing now, and not clearly worth doing later either.** Invoices are already
+their own shard (FF-DATA-4, shipped). Splitting them 4 ways by `documentType` only narrows write
+amplification further (edit one receipt → re-upload only `receipts.json.gz` instead of the whole
+`invoices.json.gz`); it does not shrink total bytes, load-time bytes, or per-record CPU cost.
+
+**Quantified (computed via `node`/`zlib.gzipSync` on synthetic `Invoice` records shaped exactly like
+`FinanceContext.tsx:177-238`, varied text per record, not guessed):** for an 800-document corpus
+(FF-DATA-2's own "~2.5–3yr active Osek Murshe" milestone) split 40/25/20/15% across
+TaxInvoice/Receipt/TaxInvoiceReceipt/TransactionInvoice, the **whole current `invoices.json.gz` is
+already only ~33.6 KB gzipped**. Splitting it 4 ways: (a) saves only ~24 KB per receipt/tax-invoice-
+receipt edit (the entire benefit), (b) **measured +8.1% more total bytes** across the 4 files vs.
+the 1 combined file (loses gzip's shared-dictionary compression across type boundaries), and (c)
+every real screen (`InvoicesView.tsx`, `vatReport.ts`, `invoiceMath.ts` turnover math) already
+iterates the **union of all 4 types** — confirmed no view queries one type in isolation — so every
+load pays 4 fetches instead of 1 for zero read-side benefit. Scaled to FF-DATA-2's own "10+ year,
+rare" milestone (4000 invoices), the whole shard is still only ~168 KB gzipped — nowhere near a
+perceptible load-time or Drive-API-limit problem.
+
+**Costs beyond the numbers:** dirty-tracking can no longer use FF-DATA-4's cheap
+reference-equality check (`FinanceContext.tsx:927`) since one array now maps to 4 shards — needs
+either a real per-flush array diff or per-type tagging at every invoice mutator call site. A
+document whose `documentType` changes (e.g. Draft TaxInvoice → TaxInvoiceReceipt) must move
+shards — remove from one type-file, add to another, in the same save cycle — a genuinely new
+financial-record correctness risk (duplication/loss across 2 files) that doesn't exist today. And
+this would be a **second** real-user Drive migration stacked on FF-DATA-4's still-fresh canary
+(shipped 2026-07-14, canary just started per `TEAM_BOARD.md:46`) plus its own still-open hardening
+follow-up (FF-DATA-8, backlog) and two dirty-tracking races already surfaced in production since
+FF-DATA-4 shipped (FF-DATA-9, FF-DATA-10).
+
+**Recommendation:** close as not-recommended, with a narrow re-open trigger — only reconsider if
+`invoices.json.gz` gzipped exceeds ~300 KB (≈7,000+ documents, beyond FF-DATA-2's own 10-year
+projection) **and** real per-type edit-frequency telemetry (none exists today) shows a concentrated,
+skewed edit pattern that would make the split's saving meaningful. Absent both, stays closed.
+**Prioritize FF-DATA-5 (IndexedDB local mirror) instead** — it fixes a cost users already feel on
+every edit (synchronous full-`JSON.stringify` to `localStorage`, not the debounced/async Drive
+flush this ticket would touch), on the same underlying growth curve, sooner and more visibly.
+
+The plan file still includes a full design-if-pursued (§2: file layout, in-memory model, per-type
+dirty-tracking, the type-change-moves-shards edge case, migration ordering) and a phased sub-ticket
+breakdown (§3) so it doesn't need re-deriving if the trigger is ever met.
+
+**Evidence:** `ops/research/FF-DATA-11-invoice-type-split-plan.md` (full plan, cites `path:line` for
+every current-model claim); size/gzip figures computed via `node -e` runs against synthetic records
+matching the real `Invoice` TypeScript shape (not estimated by inspection); confirmed no existing
+screen queries a single document type by reading `InvoicesView.tsx`, `vatReport.ts`,
+`invoiceMath.ts` in full this session.
+**Status:** OPEN — @orchestrator/@product-manager to close FF-DATA-11 as not-recommended (with the
+stated trigger) and confirm FF-DATA-5 as the next data-phase priority instead.
 
 ---
 
