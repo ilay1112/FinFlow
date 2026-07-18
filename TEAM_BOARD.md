@@ -45,7 +45,8 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DATA-2   | Report: app_data.json scaling — load time, big-JSON handling for real-time data | backend-platform | — | **Done** — report delivered (`ops/research/FF-DATA-2-app_data-scaling.md`); recommends FF-DATA-3/4/5 phased follow-ups |
 | FF-DATA-4   | Split `app_data.json` into per-entity files + gzip + safe migration (FF-DATA-3 gzip folded in) | backend-platform (design) → web-developer (impl) | security, qa | **Done** — owner live-drill passed (9/9); merged & shipped (9b8e380, 2026-07-14). Canary: owner's own account first. Rollback anchor `04c9de6` (caveat: post-migration edits absent from legacy file) |
 | FF-DATA-8   | Harden `mergeManifest` local-wins on settings/categories (rare 3-device edit-drop; non-financial) | web-developer | security | Backlog (follow-up from FF-DATA-4 security re-review) |
-| FF-DATA-11  | **Plan:** split the invoices shard further into per-document-type files (TaxInvoice / Receipt / TaxInvoiceReceipt / TransactionInvoice) — design + honest cost/benefit vs FF-DATA-4 entity split | backend-platform | — | **Done** — plan delivered (`ops/research/FF-DATA-11-invoice-type-split-plan.md`); verdict: **not recommended** (whole shard already ~34KB gzip, split saves only ~24KB/edit, costs +8.1% dictionary overhead + 4x load fan-out); recommends FF-DATA-5 instead |
+| FF-DATA-11  | **Plan:** split the invoices shard further into per-document-type files (TaxInvoice / Receipt / TaxInvoiceReceipt / TransactionInvoice) — design + honest cost/benefit vs FF-DATA-4 entity split | backend-platform | — | **Done** — plan delivered (`ops/research/FF-DATA-11-invoice-type-split-plan.md`); verdict: **not recommended** (whole shard already ~34KB gzip, split saves only ~24KB/edit, costs +8.1% dictionary overhead + 4x load fan-out); recommends FF-DATA-5 instead. **Owner declined — not splitting further; design on file if the trigger is ever met.** |
+| FF-WEB-8    | Auto-close a חשבונית עסקה when a קבלה is generated from it (status→Paid → renders as נפרע via FF-WEB-6); reopen the source if that receipt is Cancelled | web-developer | qa (strict) | **Done** — strict qa CLEAR (incl. no revenue double-count); pushed straight to main per owner |
 | FF-DATA-10  | Add reentrancy/single-flight guard to `flushToDrive` (stops overlapping flushes self-conflicting) | web-developer | qa | Backlog (nice-to-have from FF-DATA-9; not required for the fix) |
 | FF-DES-1    | `TrendBadge` green-600 fails AA contrast (~3.3:1) → green-700 | design-expert | — | Backlog (pre-existing; flagged by FF-WEB-5 design gate) |
 | FF-WEB-6    | חשבונית עסקה should not carry a "Paid/שולם" status (non-accounting demand doc; payment = נפרע). Default→Sent, drop Paid option + badge for TransactionInvoice | web-developer | qa (strict) | **Done** — strict qa CLEAR (other doc types byte-for-byte unchanged); pushed straight to main per owner |
@@ -69,6 +70,107 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-WEB-8 — Auto-close a חשבונית עסקה when a קבלה is generated from it; reopen on cancel
+
+#### [HANDOFF] web-developer → @qa-validator · 2026-07-18
+**Ticket:** FF-WEB-8
+**Branch:** none created — changes are uncommitted on `main` per instructions (not committed; not
+staged to a feature branch). Supervisor to confirm branch routing before merge.
+
+Builds on FF-WEB-4 (one-active-receipt guard) + FF-WEB-6 (a TransactionInvoice's `status: 'Paid'`
+now renders as נפרע, not שולם). Two changes, both guarded to the create-from-source flow only:
+
+**1. Auto-close on receipt generation** — `src/pages/InvoiceFormPage.tsx:401-413`, inside
+`handleSubmit`'s `else` branch (the create path; `isEditing && editingInvoice` still takes the
+plain `updateInvoice` path with no new logic, so **editing an existing receipt never triggers
+this**). Right after `addInvoice(invoiceData)`:
+```
+if (sourceInvoice && sourceInvoice.documentType === 'TransactionInvoice' && recordsPayment(documentType)) {
+  updateInvoice(sourceInvoice.id, { status: 'Paid' });
+}
+```
+- `documentType` is the already-resolved, defense-in-depth-clamped local const (`:324-326`), i.e.
+  what was actually persisted — not the raw `formData.documentType`.
+- `recordsPayment` (`src/utils/invoiceMath.ts:81-83`) is `Receipt` or `TaxInvoiceReceipt` only, so a
+  TaxInvoice or another TransactionInvoice created from the source never closes it — only an actual
+  payment-recording document does.
+- Ordering/failure safety: `handleSubmit` already `return`s early before reaching `addInvoice` if
+  `sourceAlreadyHasActiveDoc` (`:301-303`, FF-WEB-4 guard) or if the Cash Law payment validation
+  fails (`:338-340`), so the close only fires once those front-end guards — which mirror
+  `addInvoice`'s own internal defense-in-depth checks (`FinanceContext.tsx:1192-1214`) — have
+  already passed. The close call sits strictly after `addInvoice`, never before.
+- `sourceInvoice` is only ever non-null when `!isEditing` (`InvoiceFormPage.tsx:77-80`), so this is
+  inherently scoped to "creating a doc from a source," matching the ticket's
+  `!isEditing && sourceInvoice && sourceInvoice.documentType === 'TransactionInvoice'` guard.
+
+**2. Reopen on cancel** — `src/context/FinanceContext.tsx:1336-1362`, inside `deleteInvoice`'s
+"issued document → mark Cancelled" branch (the only place in the codebase that ever sets
+`status: 'Cancelled'` — confirmed via `grep -rn "'Cancelled'"`, all other hits are reads). Right
+after the document being deleted is marked Cancelled:
+```
+if (invoice.sourceInvoiceId) {
+  const source = invoices.find(i => i.id === invoice.sourceInvoiceId);
+  const otherActiveDoc = invoices.some(
+    i => i.sourceInvoiceId === invoice.sourceInvoiceId && i.id !== id && i.status !== 'Cancelled'
+  );
+  if (source && source.documentType === 'TransactionInvoice' && source.status === 'Paid' && !otherActiveDoc) {
+    setInvoices(prev => prev.map(inv => inv.id === source.id ? { ...inv, status: 'Sent' } : inv));
+  }
+}
+```
+- `otherActiveDoc` mirrors FF-WEB-4's `activeReceiptSourceIds` non-Cancelled check
+  (`InvoicesView.tsx:140-142`), just scoped to "any doc other than the one just being cancelled."
+  Given FF-WEB-4's own invariant (at most one non-Cancelled doc may link to a source at a time), the
+  document being cancelled here is necessarily the one that auto-closed the source if it's Paid, so
+  gating on `source.status === 'Paid'` + `!otherActiveDoc` is sufficient — no need to also check the
+  cancelled doc's own `documentType`.
+- Only fires when `source.status === 'Paid'`, which for a TransactionInvoice can only have been set
+  by change #1 (the form actively coerces a TransactionInvoice away from `Paid` on both doc-type
+  switch and submit — FF-WEB-6, `InvoiceFormPage.tsx:527`, `:332-333` — so it can never reach `Paid`
+  through the form itself).
+
+**3. Untouched (confirmed via `git diff --stat`):** `src/pages/InvoicesView.tsx` has **zero diff** —
+`settledSourceIds` (נפרע derivation), `activeReceiptSourceIds` (FF-WEB-4 guard), the badge
+suppression (FF-WEB-6), money totals (`acct()`/`isAccountingDocument`), and document numbering are
+all byte-for-byte unchanged. TaxInvoice / TaxInvoiceReceipt / plain-Receipt flows have no new code
+path (the `recordsPayment` / `documentType === 'TransactionInvoice'` guards exclude them).
+
+**Evidence (Loop A):**
+- `npm run build` (`tsc -b && vite build`) → **exit 0**, no new warnings (pre-existing >500kB chunk
+  warning only, unrelated).
+- i18n: no new `t(...)` calls added (checked via diff grep) → no en/he parity risk.
+- `npm run lint` → pre-existing failure, unrelated to this change: the repo-root ESLint config
+  can't resolve `tsconfigRootDir` because of the two `.claude/worktrees/*` sibling checkouts under
+  the repo (fails identically on files this ticket never touched, e.g. `vite.config.ts`,
+  `src/utils/utils.ts`). Not introduced by this diff.
+- Code trace against ACCEPT (no test runner configured in this repo — `package.json` has no
+  jest/vitest script, so this is a manual trace, same rigor as FF-WEB-6's prior strict-qa cycle):
+  - (a) generate receipt from a חשבון עסקה → `addInvoice` persists the Receipt, then `updateInvoice(source, {status:'Paid'})` fires → source flips to Paid; `InvoicesView.tsx:373` suppresses the שולם badge for `TransactionInvoice`+`Paid`, `:375-379` shows נפרע via `settledSourceIds` (now also true since a doc links via `sourceInvoiceId`) → **no "Sent" or "Paid" badge lingers**.
+  - (b) the new document itself is a normal Receipt (`documentType`/`status` computed the same as
+    any other create — the new logic only touches the *separate* `updateInvoice(sourceInvoice.id, …)`
+    call, never `invoiceData` for the doc being created) → unaffected by the TransactionInvoice Paid
+    coercion, which only applies to `documentType === 'TransactionInvoice'`.
+  - (c) cancel that receipt (RowActions → "cancel_document" → `deleteInvoice`) → issued-doc branch
+    marks it Cancelled, `otherActiveDoc` is false (it was the only linked doc), source is
+    `TransactionInvoice`+`Paid` → reopens to `Sent`.
+  - (d) TaxInvoice / TaxInvoiceReceipt-from-source and any non-source-linked doc: `recordsPayment`
+    or the `sourceInvoice`/`sourceInvoiceId` guards exclude them from both new code paths — no
+    behavior change traced.
+  - (e) editing an existing receipt (`/invoices/:id/edit`): `sourceInvoice` is always `null` while
+    editing (`:77-80`, `!id` gate), and `handleSubmit`'s `isEditing` branch calls plain
+    `updateInvoice(editingInvoice.id, invoiceData)` with no new code around it → no spurious
+    close/reopen. Likewise a plain field edit never calls `deleteInvoice`, so the reopen path is
+    unreachable from an edit.
+
+**Status:** OPEN — requesting strict qa pass per ticket (Loop A here; qa to independently verify (a)-(e) in a running app / click-through, since this repo has no automated test harness for these flows).
+
+#### [SIGN-OFF] qa-validator → team · 2026-07-18
+**Ticket:** FF-WEB-8
+
+**Verification (Loop B):** `npm run build` exit 0, 478.87 KB gzip. **CRITICAL — no revenue double-count confirmed:** Paid TransactionInvoice excluded from `totalPaid`/`currentRevenue` via `isAccountingDocument('TransactionInvoice') → false` (both `InvoicesView.tsx:148` and `DashboardView.tsx:157`). **Auto-close guards:** `sourceAlreadyHasActiveDoc` + Cash Law validation return before `addInvoice` (lines 301–303, 338–340); auto-close fires only after successful add (line 412). Scope: `sourceInvoice && TransactionInvoice && recordsPayment(documentType)` — Receipt/TaxInvoiceReceipt only (line 412). **Reopen guard:** fires only when `sourceInvoiceId` exists, `otherActiveDoc` check correctly excludes the doc being deleted (`i.id !== id`), and source is `TransactionInvoice+Paid` with no other active docs (line 1352–1362). **Display:** After auto-close, Paid badge suppressed (FF-WEB-6 line 373), נפרע shown (settledSourceIds line 375). **InvoicesView.tsx zero-diff confirmed.** No collateral to numbering, other doc flows, FF-WEB-4/6.
+
+**Status:** CLEAR — all verifiable criteria pass; no unprovable bullets. **Owner to click-through:** (a) create Receipt from TransactionInvoice → auto-closed to Paid, shows נפרע; (b) cancel Receipt → source reopens to Sent; (c) verify no revenue double-count in Dashboard.
 
 ### FF-WEB-6 — חשבונית עסקה (TransactionInvoice) must not show a "Paid/שולם" status badge
 

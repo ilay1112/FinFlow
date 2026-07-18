@@ -399,6 +399,19 @@ export default function InvoiceFormPage() {
       updateInvoice(editingInvoice.id, invoiceData);
     } else {
       addInvoice(invoiceData);
+
+      // FF-WEB-8: auto-close the source חשבון עסקה (TransactionInvoice) once a
+      // payment-recording document (קבלה / חשבונית מס-קבלה) has been generated from
+      // it — its "paid" state is now the נפרע/settled badge (FF-WEB-6 renders status
+      // 'Paid' as נפרע, not שולם, for this doc type), so re-closing it here is safe.
+      // Only for a TransactionInvoice source, and only on this create-from-source
+      // flow (sourceInvoice is never set while editing). The early returns above
+      // (sourceAlreadyHasActiveDoc / the Cash Law payments guard) already bail out
+      // before this point if the receipt itself would be blocked, so reaching here
+      // means addInvoice was allowed to persist it — never close the source first.
+      if (sourceInvoice && sourceInvoice.documentType === 'TransactionInvoice' && recordsPayment(documentType)) {
+        updateInvoice(sourceInvoice.id, { status: 'Paid' });
+      }
     }
     navigate('/invoices');
   };

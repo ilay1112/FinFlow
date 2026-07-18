@@ -1341,6 +1341,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setInvoices(prev => prev.map(inv =>
         inv.id === id ? { ...inv, status: 'Cancelled' } : inv
       ));
+
+      // FF-WEB-8: cancelling a payment-recording document (קבלה / חשבונית מס-קבלה)
+      // that had auto-closed its source חשבון עסקה (TransactionInvoice → status
+      // 'Paid', see InvoiceFormPage handleSubmit) must reopen that source to 'Sent'
+      // so it is never left "closed" with no valid receipt behind it. Only when no
+      // OTHER non-Cancelled document still links to the same source (mirrors
+      // FF-WEB-4's activeReceiptSourceIds check) — i.e. this was the one active
+      // receipt keeping it closed.
+      if (invoice.sourceInvoiceId) {
+        const source = invoices.find(i => i.id === invoice.sourceInvoiceId);
+        const otherActiveDoc = invoices.some(
+          i => i.sourceInvoiceId === invoice.sourceInvoiceId && i.id !== id && i.status !== 'Cancelled'
+        );
+        if (source && source.documentType === 'TransactionInvoice' && source.status === 'Paid' && !otherActiveDoc) {
+          setInvoices(prev => prev.map(inv =>
+            inv.id === source.id ? { ...inv, status: 'Sent' } : inv
+          ));
+        }
+      }
     }
   };
 
