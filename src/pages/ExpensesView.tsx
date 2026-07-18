@@ -32,6 +32,7 @@ import { AlertDialog } from '../components/ui/AlertDialog';
 import { CategoryManagerModal } from '../components/ui/CategoryManagerModal';
 import { RowActions } from '../components/ui/RowActions';
 import { TablePagination } from '../components/ui/TablePagination';
+import { GuideButton } from '../components/guide/GuideButton';
 import { cn } from '../utils/utils';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -428,7 +429,10 @@ export default function ExpensesView() {
     <div className="space-y-6 px-1 md:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('expenses.title')}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('expenses.title')}</h1>
+            <GuideButton viewId="expenses" />
+          </div>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('expenses.subtitle')}</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">

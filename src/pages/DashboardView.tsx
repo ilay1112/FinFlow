@@ -52,6 +52,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
+import { GuideButton } from '../components/guide/GuideButton';
 import { cn } from '../utils/utils';
 
 import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/utils';
@@ -239,7 +240,10 @@ export default function DashboardView() {
     <div className="space-y-6 md:space-y-8 px-1 md:px-0">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 md:gap-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{activeBusiness ? activeBusiness.name : t('dashboard.title')}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{activeBusiness ? activeBusiness.name : t('dashboard.title')}</h1>
+            <GuideButton viewId="dashboard" />
+          </div>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('dashboard.subtitle')}</p>
         </div>
 

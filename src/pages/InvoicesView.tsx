@@ -33,6 +33,7 @@ import { Input } from '../components/ui/Input';
 import { SendInvoiceModal } from '../components/SendInvoiceModal';
 import { RowActions } from '../components/ui/RowActions';
 import { TablePagination } from '../components/ui/TablePagination';
+import { GuideButton } from '../components/guide/GuideButton';
 import { useCurrencyFormatter } from '../utils/format';
 import { resolveCopyType, isAccountingDocument } from '../utils/invoiceMath';
 
@@ -223,7 +224,10 @@ export default function InvoicesView() {
     <div className="space-y-6 px-1 md:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('invoices.title')}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('invoices.title')}</h1>
+            <GuideButton viewId="income" />
+          </div>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('invoices.subtitle')}</p>
         </div>
         <Button onClick={() => navigate('/invoices/new')} className="w-full sm:w-auto h-11 md:h-10">

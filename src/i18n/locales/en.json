@@ -374,5 +374,203 @@
     "delete_verify_error": "The confirmation text does not match. Please try again.",
     "save_success": "Profile updated successfully",
     "incomplete_error": "Please complete your business profile to continue using tbiz."
+  },
+  "guide": {
+    "close": "Close",
+    "skip": "Skip guide",
+    "next": "Next",
+    "back": "Back",
+    "done": "Got it",
+    "step_counter": "{{current}}/{{total}}",
+    "reopen_aria": "Show guide for this screen",
+    "dashboard": {
+      "title": "Dashboard",
+      "steps": {
+        "tiles": {
+          "title": "Your numbers at a glance",
+          "body": "Revenue, Expenses, Net Profit and Est. Tax Liability update live for the selected period. Net Profit = Revenue minus Expenses; the tax tile estimates income tax on that profit using this year's progressive brackets."
+        },
+        "period": {
+          "title": "Choose a period",
+          "body": "Switch between Current Month, Current Year, or pick your own dates with Custom — every tile and chart below recalculates for that window."
+        },
+        "charts": {
+          "title": "Revenue vs. Expenses & categories",
+          "body": "The bar chart compares monthly revenue and expenses; the pie chart breaks down this period's expenses by category so you can spot where the money goes."
+        },
+        "quickActions": {
+          "title": "Quick actions",
+          "body": "Use the shortcuts above the tiles to jump straight into creating a new invoice/receipt, logging an expense, or adding a client."
+        }
+      }
+    },
+    "income": {
+      "title": "Income",
+      "steps": {
+        "docTypes": {
+          "title": "Document types",
+          "body": "חשבונית מס (tax invoice) bills a client; קבלה (receipt) records payment received; חשבונית עסקה (transaction invoice) is a demand/quote — not income until a receipt is issued from it; חשבונית מס-קבלה combines both in one document."
+        },
+        "statuses": {
+          "title": "Statuses & נפרע",
+          "body": "Draft → Sent → Paid tracks the document's own lifecycle. A חשבונית עסקה never shows Paid — instead it gets a נפרע (settled) badge once a receipt has been created from it."
+        },
+        "create": {
+          "title": "Add income",
+          "body": "Tap \"New Invoice/Receipt\" to create any document type — pick a client, items and payment, and it's ready to send or download."
+        },
+        "receiptFromTransaction": {
+          "title": "Turning a quote into income",
+          "body": "From a חשבונית עסקה's row menu, choose \"Create receipt from this\" to auto-fill a new קבלה with the same client, items and price — issuing it automatically settles (closes) the source document."
+        },
+        "searchSort": {
+          "title": "Find anything fast",
+          "body": "Search by document number or client name, filter by date range, and click any column header to sort — results are paginated below the table."
+        },
+        "pdf": {
+          "title": "PDF & sending",
+          "body": "Use the row actions to download a PDF or send the document by email directly to the client."
+        }
+      }
+    },
+    "invoiceForm": {
+      "title": "Invoice / receipt form",
+      "steps": {
+        "clientAndType": {
+          "title": "Client & document type",
+          "body": "Search for an existing client or add a new one, then choose the document type. An Esek Patur business can only issue קבלה or חשבונית עסקה — a tax invoice requires Esek Morshe or a Company."
+        },
+        "items": {
+          "title": "Line items",
+          "body": "Add one row per item or service with a description, quantity and unit price — the total updates automatically as you type."
+        },
+        "payments": {
+          "title": "אמצעי תשלום (payment methods)",
+          "body": "On documents that record payment, split the total across cash, digital, card or bank wire. Israel's Cash Law caps how much of a single transaction can be paid in cash — the field warns you if you go over."
+        },
+        "datesStatus": {
+          "title": "Dates & status",
+          "body": "Set the document date and, for a tax invoice, a due date. Status moves Draft → Sent → Paid as the deal progresses."
+        },
+        "allocation": {
+          "title": "Allocation number",
+          "body": "Above the Tax Authority's threshold, a document needs an allocation number (מספר הקצאה) from the ITA before it can be issued — this field only appears when one is required."
+        },
+        "notes": {
+          "title": "Notes",
+          "body": "Add an optional note — it prints on the PDF, useful for payment terms or a personal message to the client."
+        }
+      }
+    },
+    "expenses": {
+      "title": "Expenses",
+      "steps": {
+        "add": {
+          "title": "Log an expense",
+          "body": "Tap \"Add Expense\" and fill in the vendor, category, amount and date."
+        },
+        "receipt": {
+          "title": "Attach the receipt",
+          "body": "Upload a photo or PDF of the receipt — it's stored in your own Google Drive and linked to the expense for your records."
+        },
+        "categories": {
+          "title": "Categories",
+          "body": "Pick a category to group spending on the dashboard's breakdown chart — you can add your own categories from the manager."
+        },
+        "vat": {
+          "title": "VAT fields (Esek Morshe)",
+          "body": "For a VAT-registered business, each expense captures the input VAT and how much of it is deductible (full, two-thirds for vehicles/travel, or none for entertainment) so it flows into your VAT report."
+        }
+      }
+    },
+    "clients": {
+      "title": "Clients",
+      "steps": {
+        "overview": {
+          "title": "Your client list",
+          "body": "Every client you bill lives here, with lifetime revenue tracked at the top."
+        },
+        "add": {
+          "title": "Add or edit a client",
+          "body": "Add a client's name and contact details here, or from the invoice form while creating a document."
+        },
+        "history": {
+          "title": "Invoice history",
+          "body": "Open a client's history to see every document ever issued to them."
+        }
+      }
+    },
+    "bookingAgents": {
+      "title": "Booking agents",
+      "steps": {
+        "overview": {
+          "title": "What booking agents are",
+          "body": "If a booking agent brings you clients for a commission, track them here instead of as a regular client."
+        },
+        "commission": {
+          "title": "Commission rate",
+          "body": "Set a commission percentage (and an optional minimum) per agent — log the commission owed as an expense from the agent's own invoice."
+        },
+        "history": {
+          "title": "Commission history",
+          "body": "Open an agent's history to see every deal and commission tied to them."
+        }
+      }
+    },
+    "taxes": {
+      "title": "Taxes",
+      "steps": {
+        "estimate": {
+          "title": "Income tax estimate",
+          "body": "This estimates income tax on your net profit using this year's progressive tax brackets — it does not include ביטוח לאומי / מס בריאות."
+        },
+        "deductions": {
+          "title": "Deductions",
+          "body": "A qualifying small business gets a 30% normative deduction on revenue automatically; a Company deducts its actual tracked expenses instead."
+        },
+        "disclaimer": {
+          "title": "Not a substitute for your accountant",
+          "body": "Treat these numbers as a running estimate to plan around — always confirm your actual liability with a רו\"ח / יועץ מס."
+        }
+      }
+    },
+    "vat": {
+      "title": "VAT report",
+      "steps": {
+        "periods": {
+          "title": "Reporting periods",
+          "body": "Pick a bimonthly or monthly period to review — your filing cadence is set in your business profile."
+        },
+        "report": {
+          "title": "What's in the report",
+          "body": "Each period totals taxable sales, output VAT, deductible input VAT, and the net VAT you owe or are owed."
+        },
+        "blocked": {
+          "title": "Blocked amounts",
+          "body": "Some input VAT can't be deducted yet — e.g. no tax invoice on file, or a missing supplier allocation number — those rows are flagged so you know what to chase down."
+        },
+        "export": {
+          "title": "Export",
+          "body": "Download the period as a CSV to hand to your accountant or file yourself."
+        }
+      }
+    },
+    "profile": {
+      "title": "Business profile",
+      "steps": {
+        "identity": {
+          "title": "Business identity",
+          "body": "Your business name, ID number and type (Esek Patur, Esek Morshe or Company) control the legal titles and rules applied to your documents."
+        },
+        "workspaces": {
+          "title": "Workspaces",
+          "body": "Running more than one business? Switch or create a workspace from the dropdown at the top of the sidebar — each keeps entirely separate data."
+        },
+        "sync": {
+          "title": "Drive sync",
+          "body": "Everything is backed up to your own Google Drive. Use \"Disconnect\" here to sign out of sync on this device."
+        }
+      }
+    }
   }
 }

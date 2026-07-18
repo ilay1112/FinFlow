@@ -5,6 +5,7 @@ import { Calculator, Info, AlertTriangle, Download, CalendarClock, FileWarning }
 import { useFinance } from '../context/FinanceContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { GuideButton } from '../components/guide/GuideButton';
 import { useCurrencyFormatter } from '../utils/format';
 import { getVatRate, getAllocationThreshold, getVatMonthlyFilingThreshold } from '../config/taxConfig';
 import { computeYtdTurnover } from '../utils/invoiceMath';
@@ -138,7 +139,10 @@ export default function VatReportView() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('vat.title')}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('vat.title')}</h1>
+            <GuideButton viewId="vat" />
+          </div>
           <p className="text-slate-500 mt-1">{t('vat.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">

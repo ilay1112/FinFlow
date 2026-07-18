@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { AlertDialog } from '../components/ui/AlertDialog';
+import { GuideButton } from '../components/guide/GuideButton';
 import { cn } from '../utils/utils';
 import { CheckCircle, Cloud, LogOut, AlertCircle, Trash2, RefreshCw } from 'lucide-react';
 
@@ -79,7 +80,10 @@ export default function ProfileView() {
       )}
 
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">{t('profile.title')}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold text-slate-900">{t('profile.title')}</h1>
+          <GuideButton viewId="profile" />
+        </div>
         <p className="text-slate-500 mt-1">{t('profile.subtitle')}</p>
       </div>
 

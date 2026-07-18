@@ -22,6 +22,7 @@ import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
+import { GuideButton } from '../components/guide/GuideButton';
 
 export default function ClientsView() {
   const { t } = useTranslation();
@@ -130,7 +131,10 @@ export default function ClientsView() {
     <div className="space-y-6 px-1 md:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('common.clients')}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{t('common.clients')}</h1>
+            <GuideButton viewId="clients" />
+          </div>
           <p className="text-sm md:text-base text-slate-500 mt-1">{t('clients.subtitle')}</p>
         </div>
         <Button onClick={() => handleOpenModal()} className="w-full sm:w-auto h-11 md:h-10 font-bold">

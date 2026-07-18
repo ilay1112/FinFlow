@@ -7,6 +7,7 @@ import { calculateProgressiveTax, NORMATIVE_DEDUCTION_RATE } from '../utils/util
 import { isAccountingDocument } from '../utils/invoiceMath';
 import { useCurrencyFormatter } from '../utils/format';
 import OsekPaturCeilingWarning from '../components/OsekPaturCeilingWarning';
+import { GuideButton } from '../components/guide/GuideButton';
 
 export default function TaxesView() {
   const { t } = useTranslation();
@@ -46,7 +47,10 @@ export default function TaxesView() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">{t('common.taxes')}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold text-slate-900">{t('common.taxes')}</h1>
+          <GuideButton viewId="taxes" />
+        </div>
         <p className="text-slate-500 mt-1">{t('taxes.subtitle')}</p>
       </div>
 

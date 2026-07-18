@@ -29,6 +29,7 @@ import {
   cashCapForTotal,
 } from '../utils/invoiceMath';
 import { getVatRate, getAllocationThreshold, getCashLimit } from '../config/taxConfig';
+import { GuideButton } from '../components/guide/GuideButton';
 
 /** A payment line being edited in the form; amount may be blank while typing. */
 type PaymentLineDraft = { id: string; method: PaymentMethod; amount: number | '' };
@@ -434,6 +435,7 @@ export default function InvoiceFormPage() {
               ? t('invoices.create_receipt')
               : t('invoices.create_invoice')}
         </h1>
+        <GuideButton viewId="invoiceForm" />
       </div>
 
       {/* Scrollable form body */}
