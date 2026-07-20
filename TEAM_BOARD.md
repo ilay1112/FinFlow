@@ -48,6 +48,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DATA-11  | **Plan:** split the invoices shard further into per-document-type files (TaxInvoice / Receipt / TaxInvoiceReceipt / TransactionInvoice) — design + honest cost/benefit vs FF-DATA-4 entity split | backend-platform | — | **Done** — plan delivered (`ops/research/FF-DATA-11-invoice-type-split-plan.md`); verdict: **not recommended** (whole shard already ~34KB gzip, split saves only ~24KB/edit, costs +8.1% dictionary overhead + 4x load fan-out); recommends FF-DATA-5 instead. **Owner declined — not splitting further; design on file if the trigger is ever met.** |
 | FF-WEB-8    | Auto-close a חשבונית עסקה when a קבלה is generated from it (status→Paid → renders as נפרע via FF-WEB-6); reopen the source if that receipt is Cancelled | web-developer | qa (strict) | **Done** — strict qa CLEAR (incl. no revenue double-count); pushed straight to main per owner |
 | FF-WEB-9    | First-time in-app guide: per-view walkthroughs (dashboard, expenses, income, clients, agents, taxes, profile, invoice form), per-view re-open toggle, global skip/disable | web-developer | design, qa | **Done** — design + qa CLEAR; merged & shipped to main (f21eb39, 2026-07-19). Bundle 485.7 KB gz (budget watch: 14 KB headroom). |
+| FF-WEB-10   | iOS add-to-home-screen / PWA: manifest (standalone) + Apple meta + icons — native-like launch, modeled on second-brain's setup (SW deferred) | web-developer | qa (+ design advisory on icon) | **Done** — qa CLEAR (manifest/PNGs/head/serving verified); pushed to main (OAuth-from-standalone testable only on prod origin, so no preview step). **Owner: iPhone A2HS test**; icons are placeholders pending real logo art |
 | FF-DATA-10  | Add reentrancy/single-flight guard to `flushToDrive` (stops overlapping flushes self-conflicting) | web-developer | qa | Backlog (nice-to-have from FF-DATA-9; not required for the fix) |
 | FF-DES-1    | `TrendBadge` green-600 fails AA contrast (~3.3:1) → green-700 | design-expert | — | Backlog (pre-existing; flagged by FF-WEB-5 design gate) |
 | FF-WEB-6    | חשבונית עסקה should not carry a "Paid/שולם" status (non-accounting demand doc; payment = נפרע). Default→Sent, drop Paid option + badge for TransactionInvoice | web-developer | qa (strict) | **Done** — strict qa CLEAR (other doc types byte-for-byte unchanged); pushed straight to main per owner |
@@ -71,6 +72,131 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-WEB-10 — iOS Add-to-Home-Screen: standalone launch (manifest + Apple meta + icons)
+
+#### [HANDOFF] web-developer → @qa-validator, @design-expert (advisory: icon look) · 2026-07-20
+**Ticket:** FF-WEB-10
+**Branch:** none created — changes are uncommitted on `main` per instructions (repo edits only, not
+staged to a feature branch or committed to git). Supervisor to confirm branch routing before merge.
+
+Modeled on the reference PWA setup in `second-brain` (`src/app/layout.tsx`, `src/app/manifest.ts`,
+read-only — not modified). tbiz is a Vite SPA, not Next, so this is the static-file equivalent: a
+hand-written `manifest.webmanifest` + `<head>` tags in `index.html`, no App Router metadata API.
+
+**Files added:**
+- `public/manifest.webmanifest` — `name`/`short_name: "tbiz"`, `display: "standalone"`,
+  `start_url`/`scope: "/"`, `lang: "he"`, `dir: "rtl"`, `background_color`/`theme_color: "#F8FAFC"`
+  (tailwind slate-50 — read from the app's actual body bg in `index.html:23`, not guessed), 4 icons
+  (192/512 `purpose:"any"` + maskable 192/512).
+- `public/icons/icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`,
+  `public/apple-touch-icon.png` (180×180, square corners) — see icon approach below.
+
+**Files changed:**
+- `index.html:4-7` (head) — added `<link rel="manifest">`, `<link rel="apple-touch-icon">`,
+  `<meta name="apple-mobile-web-app-capable" content="yes">` **and** the modern
+  `<meta name="mobile-web-app-capable" content="yes">` (dual-tag approach, same rationale as
+  second-brain's `layout.tsx:34-40` comment — iOS's home-screen standalone detection still keys off
+  the Apple-prefixed tag even though `mobile-web-app-capable` is the current standard one; Vite has no
+  metadata-injection convention so both are hand-written), `<meta name="apple-mobile-web-app-status-bar-style" content="default">`,
+  `<meta name="apple-mobile-web-app-title" content="tbiz">`, `<meta name="theme-color" content="#F8FAFC">`.
+
+**Status-bar-style choice — "default" not "black-translucent":** tbiz is a light-themed app
+(`#F8FAFC`/white surfaces throughout, confirmed via `index.html`'s own inline spinner styles and
+`tailwind.config.js`'s CSS-var-driven light palette). `default` renders a white bar with dark
+icons/text and does **not** draw app content underneath it, so no extra safe-area padding is needed
+anywhere in the app. `black-translucent` (what second-brain uses, since it's dark-themed) would put a
+dark-icon status bar over a light app and require every top-of-screen surface to add safe-area insets
+— not worth it for a "make A2HS launch native-like" ticket. Documented inline at `index.html:17-21`.
+
+**Icon approach (flag for @design-expert / owner):** all 5 PNGs are **programmatic placeholders**,
+generated with a no-npm-dependency Node script (`zlib.deflateSync` + hand-rolled PNG chunk/CRC
+encoding — no new dependency, so nothing to route through the cost-validator gate). The script lives
+in scratchpad only, not committed to the repo (one-off asset generator, not app code). It replicates
+`public/favicon.svg`'s look (blue-600 `#2563EB` field, per the SVG's `fill="#2563EB"`, matching the
+existing favicon and the app's primary accent) with a simplified white lowercase-"t" glyph (stem +
+crossbar — the favicon's decorative top curl was dropped at icon scale because a curl-shaped stroke of
+similar width to the crossbar visually read as a capital "F", not "t"; stem+crossbar alone is
+unambiguous as "t" down to 192px). Maskable variants scale the glyph to ~42% of the canvas so it sits
+inside iOS/Android's ~80%-diameter safe circle; "any"-purpose icons use a softly rounded-square field
+(the maskable ones are literally full-bleed square, per spec, since the OS applies its own mask).
+**These are not final brand art — recommend the owner/design swap in a real logo-mark icon set before
+a wide iOS rollout**, this ticket only needed *something real and iOS-valid* to prove the standalone
+launch works, not final visual polish.
+
+**Explicitly out of scope — no service worker:** second-brain's `ServiceWorkerRegister` +
+`public/sw.js` give it an offline app shell; iOS standalone-mode launch (no Safari chrome) does **not**
+require a service worker — that's purely `display: "standalone"` in the manifest + the Apple meta
+tags. tbiz is a frequently-deployed finance app (this board alone shows ~15 ship-to-main events in the
+last 8 days); a SW adds real staleness risk (users stuck on a cached old bundle after a deploy that
+changed data-shape assumptions) for zero benefit toward this ticket's actual goal. Deferring to a
+follow-up ticket if the owner ever wants an offline shell specifically.
+
+**Vercel / dist serving trace:**
+- `vite build` copies everything in `public/` into `dist/` verbatim (Vite's documented default
+  behavior — confirmed empirically below, not assumed).
+- `vercel.json:2-12`: `builds` uses `@vercel/static-build` with `distDir: "dist"`; `routes` is
+  `[{"src":"/lp/?$", ...}, {"handle":"filesystem"}, {"src":"/(.*)", "dest":"/"}]`. The
+  `{"handle":"filesystem"}` entry tells Vercel's router: **before** falling through to later route
+  rules (here, the SPA catch-all `/(.*) → /`), first check if the requested path matches a real file
+  in the deployed output — if it does, serve that file directly and skip the rest of `routes`. Since
+  `manifest.webmanifest`, `apple-touch-icon.png`, and `icons/*.png` all exist as real files at the top
+  of `dist/` (verified below), requests to `/manifest.webmanifest`, `/apple-touch-icon.png`,
+  `/icons/icon-*.png` are served as static files with correct content-types — they never reach the
+  `/(.*) → /` SPA fallback that would otherwise return `index.html` for every path.
+
+**Verify (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — **exit 0**, no new TS errors.
+- `dist/` contains all new static assets post-build: `dist/manifest.webmanifest`,
+  `dist/apple-touch-icon.png`, `dist/icons/icon-192.png`, `icon-512.png`, `icon-maskable-192.png`,
+  `icon-maskable-512.png` — all present (confirms the "Vite copies `public/` → `dist/`" claim above,
+  not just asserted).
+- `node -e "JSON.parse(...)"` on `dist/manifest.webmanifest` — **parses clean**, valid JSON.
+- Grepped `dist/index.html` for the 7 new head tags (`manifest` link, `apple-touch-icon` link, both
+  `*-web-app-capable` metas, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`,
+  `theme-color`) — **all 7 present** in the built output.
+- PNG validity: checked each of the 5 new PNGs' magic bytes (`89 50 4E 47 0D 0A 1A 0A`) and IHDR
+  width/height — all valid PNG, dimensions exactly 192×192 / 512×512 / 180×180 as required (iOS
+  requires real PNGs for `apple-touch-icon`, not SVG — confirmed these are raster, not vector).
+- **Bundle impact:** JS/CSS chunks are **byte-identical** to pre-ticket (this change touches only
+  `public/` static files + `index.html` head markup, no JS/TS behavior) — main bundle stays
+  **485.72 KB gz** (unchanged from FF-WEB-9's shipped number). `dist/index.html` itself is 4.11 KB /
+  1.69 KB gz (a few added head lines, negligible, not part of the JS budget). Total new static-asset
+  weight: manifest 825 B + apple-touch-icon 719 B + icon-192 770 B + icon-512 3017 B +
+  icon-maskable-192 705 B + icon-maskable-512 2579 B = **~8.6 KB added**, none of it in the critical
+  JS/CSS path (icons are fetched by the OS lazily on "Add to Home Screen", not on page load).
+
+**Owner iPhone test checklist (cannot be verified from code — the one thing that needs a real
+device):**
+1. Open tbiz in Safari on a real iPhone → Share → "Add to Home Screen" → confirm the home-screen icon
+   shows the tbiz "t" mark (not a generic globe/screenshot icon).
+2. Launch from the home-screen icon → confirm it opens **full-screen with no Safari address bar /
+   chrome** (standalone mode actually engaged, not just bookmarked).
+3. **Sign in with Google from the standalone launch** — this is the specific risk flagged in the
+   ticket: `src/services/auth.ts:72-82` pins the OAuth `redirectUrl` to `${origin}/login` on web (fixed
+   URL, already authorized in the Google console per FF-INT-2), which is correct in *both* browser and
+   standalone contexts on paper, but iOS's in-app/standalone WebView OAuth handoff back to the
+   installed app icon (vs. back to Safari) is the one behavior that genuinely cannot be verified
+   without a physical device — confirm the redirect lands back inside the **standalone app window**,
+   not a stray Safari tab.
+4. Confirm Hebrew RTL renders correctly in standalone mode (layout direction, header, nav).
+5. Eyeball the status bar over the app's light header — confirm `default` style (white bar, dark
+   icons) looks right and doesn't clash/overlap; flag if `black-translucent` would actually look
+   better in practice.
+
+**Ask of @qa-validator:** static/build verification is done (above); please pick up anything
+browser-driven you can run without a physical iPhone (manifest fetch, `<head>` tag presence in a
+served build, Lighthouse PWA installability check if available). Real-device A2HS + OAuth is owner-only
+(no device in this session).
+**Ask of @design-expert (advisory):** the icon glyph is a functional placeholder (see rationale
+above) — flag if it's acceptable to ship as-is for now or should block on real logo art first.
+
+#### [SIGN-OFF] qa-validator → team · 2026-07-20
+**Ticket:** FF-WEB-10
+
+**Verdict: CLEAR** — All verifiable criteria pass. Build succeeds (exit 0), dist/ contains all 6 assets (manifest + 5 PNGs), manifest parses valid JSON with correct fields (display="standalone", start_url="/", scope="/", lang="he", dir="rtl", colors="#F8FAFC"). All 7 head tags present in dist/index.html (manifest link, apple-touch-icon link, both *-web-app-capable metas, status-bar-style, title, theme-color). PNGs validated: all genuine raster, dimensions exact (192x192/512x512/180x180). Bundle unchanged 485.72 KB gz; zero JS/TS changes, zero i18n changes, zero new dependencies. Vercel routing correct: {"handle":"filesystem"} precedes SPA catch-all, /lp unaffected. No regressions: only public/ files + index.html head markup touched, existing routes/SEO/OG tags untouched, app code unchanged.
+
+**Owner iPhone checklist:** (1) home-screen icon shows tbiz "t" mark; (2) standalone mode launches full-screen; (3) Google OAuth from standalone redirects back to app (redirectUrl=/login already authorized per FF-INT-2, critical device-only test); (4) Hebrew RTL renders correctly; (5) light status bar (default style, white with dark icons) over light header. Icons are programmatic placeholders (blue-600 field, white-t glyph) — design to swap for real branding before wide rollout.
 
 ### FF-WEB-9 — First-time in-app guide (per-view walkthroughs)
 

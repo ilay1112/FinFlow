@@ -5,6 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>tbiz | ניהול הוצאות לעוסק פטור והפקת קבלות דיגיטליות</title>
+
+    <!-- FF-WEB-10: installable / iOS Add-to-Home-Screen standalone launch -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- iOS home-screen standalone detection still keys off the Apple-prefixed
+         tag even though `mobile-web-app-capable` is the modern standard one
+         (same dual-tag approach as second-brain's layout.tsx, TKT-OPS-2) —
+         set both explicitly since Vite has no metadata convention to do it
+         for us. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- "default" (white bar, dark text, non-translucent) rather than
+         "black-translucent": tbiz is a light-themed app (bg #F8FAFC / white
+         header, see body style below) — "default" matches the header's light
+         look, whereas "black-translucent" would draw content under a status
+         bar meant for a dark app and needs extra safe-area handling we don't
+         have. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="tbiz" />
+    <meta name="theme-color" content="#F8FAFC" />
     <meta name="description" content="tbiz - ניהול כספים לעסק הקטן שלך. חשבוניות, קבלות ומעקב הוצאות לעוסק פטור ומורשה. הנתונים שלך נשארים אצלך, ב-Google Drive." />
     <meta property="og:title" content="tbiz | ניהול הוצאות לעוסק פטור והפקת קבלות דיגיטליות" />
     <meta property="og:description" content="tbiz - ניהול כספים לעסק הקטן שלך. חשבוניות, קבלות ומעקב הוצאות לעוסק פטור ומורשה. הנתונים שלך נשארים אצלך, ב-Google Drive." />
