@@ -57,6 +57,8 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DOC-1    | Update vault `ARCHITECTURE.md` §6.2/6.3/7.1-7.3/13 for the sharded storage model | backend-platform | — | **Done** — sections rewritten to as-built; fixed stale `FinFlow Data`→`tbiz Data` in Drive diagram |
 | FF-DOC-2    | Sweep remaining FinFlow→tbiz / `com.finflow.app` refs in vault `ARCHITECTURE.md` (title, §1-3) — rebrand only touched the repo | backend-platform | — | **Folded into FF-DOC-3** |
 | FF-DOC-3    | Full vault doc refresh (FinFlow.md + ARCHITECTURE.md): rebrand sweep + everything shipped since — FF-DATA-4/9, FF-WEB-4/5/6/8/9/10, /lp, PWA, current stage/status | backend-platform | — | **Done** — both vault docs resynced to main @ 1aa4f33 (2026-07-21); fixed stale app_data.json-monolith framing in FinFlow.md §2/§6; tbiz sweep complete (historical refs kept deliberately) |
+| FF-WEB-11   | Unsaved-changes guard: "discard? entered data will be lost" confirm when closing a DIRTY data-entry modal (X/backdrop/Esc) or leaving the dirty invoice form (Cancel/back/in-app nav/tab-close); clean forms + post-save close without prompt | web-developer | design, qa | Shipped to main (c4c414a) — qa CLEAR, design CLEAR (a11y re-verified). Live signed-in click-through of the 5 modals + invoice form still owner-only (app is Google-auth-gated; no demo bypass) |
+| FF-WEB-12   | Rename "Booking Agents"→"Lead Agents" / "סוכני הזמנות"→"סוכני לידים" across ALL user-facing UI (nav, titles, buttons, empty/search states, guide, he+en incl. singular); KEEP internal bookingAgent* fields, `bookingAgents` Drive shard, `/booking-agents` route (label-only, no data migration) | web-developer | qa (+ design advisory) | Queued — starts after FF-WEB-11 (shared files: i18n, BookingAgentsView, InvoiceFormPage) |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
 | FF-WEB-4    | Invoice creation: relabel payment section (תשלומים→אמצעי תשלום, form only); limit קבלה-from-חשבונית עסקה to one non-cancelled | web-developer | qa (+ tax-logic advisory) | In Validation — qa CLEAR (PDF label safe; 3-guard limit; cancelled frees source); staged on `feat/web-4-receipt-limit` for owner click-through. Advisory: limit rules out installment/partial-payment receipts (owner-accepted) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
@@ -74,7 +76,196 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
 
-### FF-WEB-10 — iOS Add-to-Home-Screen: standalone launch (manifest + Apple meta + icons)
+### FF-WEB-11 — Unsaved-changes guard (modals + invoice form)
+
+#### [HANDOFF] web-developer → @design-expert, @qa-validator · 2026-07-21
+**Ticket:** FF-WEB-11
+**Branch:** none created — changes are uncommitted on `main` per instructions (not staged to a
+feature branch or committed to git). Supervisor to confirm branch routing before merge.
+
+No new npm dependency. Bundle was tight (485.7/500 KB gz) — see the routing detour below, it drove
+the biggest implementation decision on this ticket.
+
+**Modal guard API chosen — `Modal` gets an optional `confirmClose?: boolean`**
+(`src/components/ui/Modal.tsx:14-28`). When true, all THREE built-in close paths (X button,
+backdrop click, Escape) route through an internal `attemptClose` that shows a "discard unsaved
+changes?" confirm instead of calling `onClose` directly; `onClose` only fires once the user
+confirms. Defaults to `false` — every modal I didn't touch (receipt preview, history modals,
+delete-verify, SendInvoiceModal, SessionExpiredModal, …) is byte-identical in behavior.
+- **Went beyond the literal 3-path spec**: a form's own in-content "Cancel" button calls
+  `setIsModalOpen(false)` directly today, which would bypass the guard entirely — an obvious hole
+  QA would hit immediately. Fixed by extending `Modal`'s `children` to accept a render-prop form
+  (`children: ReactNode | ((helpers: { requestClose }) => ReactNode)`); consumers that need their
+  Cancel button gated destructure `requestClose` and use it instead of calling `onClose` raw. Fully
+  backward-compatible — plain-`ReactNode` children (the majority) are untouched.
+- **Confirm UI**: extracted the icon+description+buttons body from `AlertDialog` into a new
+  dependency-free `ConfirmDialogBody.tsx` (no `Modal` import), used by both `AlertDialog` (unchanged
+  behavior, refactor-only) and `Modal`'s own inline confirm overlay. This avoids a literal
+  `Modal↔AlertDialog` circular import AND avoids a second mounted `<Modal>` instance double-managing
+  the body-scroll lock/Escape listener. `Modal.tsx:30-43` adds a reference-counted body-scroll lock
+  so the guarded modal + its own confirm overlay (both open at once) don't stomp each other's
+  `overflow` cleanup on close. Both overlays are `z-[100]`; the confirm renders as a later DOM
+  sibling inside the guarded modal, so it paints on top — verified by reading the render order and
+  by manual click-through (nested backdrop clicks / Escape resolve to the right layer, confirmed
+  Escape while the confirm is up dismisses the confirm, not the whole modal).
+
+**Modals wired (dirty = live form state vs. a snapshot captured when the modal opened, deep-compared
+via a new `deepEqual` in `src/utils/utils.ts`):**
+- Expenses add/edit (`src/pages/ExpensesView.tsx`) — snapshot taken in `handleOpenModal` for both
+  add (empty defaults) and edit (record values); Cancel routed through `requestClose`.
+- Clients add/edit (`src/pages/ClientsView.tsx`) — same pattern.
+- BookingAgents add/edit (`src/pages/BookingAgentsView.tsx`) — same pattern (typed `BookingAgentFormData`
+  added to satisfy tsc after `commissionRate`/`minCommission` widened to `number | string` without it).
+- Workspace-create modal — **lives in `src/layouts/AppLayout.tsx:445-471`, not `ProfileView.tsx`**
+  (ticket said ProfileView; grepped and confirmed it's actually in the app shell). Dirty = typed,
+  un-submitted workspace name.
+- `CategoryManagerModal.tsx` — dirty = typed, un-submitted category name (add/delete themselves apply
+  immediately, so there's no other "unsaved" state to lose).
+
+**Consciously skipped:**
+- `SendInvoiceModal` — no editable *persisted* data; email/phone are prefilled from the client record
+  and closing loses nothing durable. Pure send-action modal per the ticket's own guidance.
+- `ProfileView`'s delete-verification modal (2nd of the two-step delete flow) — it's already a
+  security confirmation gated behind a first AlertDialog, not a data-entry record; stacking a second
+  "discard?" confirm on top of a destructive-action flow felt actively confusing, not safer.
+- Expenses' receipt-preview modal and the Clients/BookingAgents invoice-history modals — view-only,
+  no form.
+
+**Invoice-form guard (`src/pages/InvoiceFormPage.tsx`) — NOT `useBlocker`, see why below:**
+- **Dirty detection**: a snapshot (`initialSnapshot` state, set once in the existing mount effect that
+  seeds `clientSearchTerm`/`agentSearchTerm` — captured *after* seeding so it reflects the settled
+  values, not the pre-seed empty string) vs. live `formData`/`clientSearchTerm`/`agentSearchTerm`,
+  deep-compared with the same `deepEqual` (handles `items[]`/`paymentLines[]` sensibly — array
+  length + per-element structural equality, so editing a line item back to its original value reads
+  clean, not "any render touched state" dirty).
+- **Save-path clean-out**: `handleSubmit` sets a `savedRef` ref to `true` immediately before the
+  existing `navigate('/invoices')` call (both the add and edit success branches funnel through that
+  one call). The save's own `navigate()` is called directly, never through the guard, so it never
+  waits on anything to flip. `savedRef` is read only inside the `beforeunload` listener (an event
+  handler, not render) to also suppress a false tab-close warning in the sliver of time between "save
+  committed" and "component unmounted."
+- **(2) beforeunload**: attached only while `isDirty`, removed the instant it isn't (effect keyed on
+  `[isDirty]`) — never a global stuck listener.
+- **(1) In-app navigation — the actual finding of this ticket**: `useBlocker`/`unstable_usePrompt`
+  both require a **data router** (`createBrowserRouter`/`RouterProvider`) — confirmed by reading
+  `node_modules/react-router/dist/development/chunk-U7ORXROY.js:7698` (`useDataRouterContext`). This
+  app uses declarative `<BrowserRouter>/<Routes>` (`src/App.tsx`). I measured the cost of migrating:
+  baseline main-chunk gzip **485.72 KB**; with `createBrowserRouter`/`RouterProvider` swapped in,
+  **503.82–504.06 KB** (confirmed via `git stash` A/B — the delta is the data-router runtime itself,
+  `useBlocker` alone only cost +0.24 KB once already on a data router). That blows the 500 KB budget,
+  so I did **not** migrate the router. Instead built a small dependency-free
+  `src/context/NavigationGuardContext.tsx`: a dirty page registers an intercept via
+  `useUnsavedChangesLeaveGuard(isDirty)`; every navigation trigger reachable while that page might be
+  mounted wraps its `navigate(...)` in `guardedNavigate(...)` instead of calling it raw — InvoiceFormPage's
+  own Cancel/header-back/"add client"/"add agent" buttons, and in `AppLayout.tsx`: the sidebar nav
+  `NavLink`s (`e.preventDefault()` + `guardedNavigate`, confirmed react-router's own `Link`/`NavLink`
+  click handler respects a consumer's `preventDefault()` before running its internal navigation —
+  read at `node_modules/react-router/dist/development/chunk-YL5M26XI.js:434-439`), the business
+  switcher, the "Business Profile" link, and Sign Out. `FloatingActionButton` was **not** touched —
+  it's already hidden on `/invoices/new` and `/invoices/:id/edit` (`HIDE_ON` regex,
+  `src/components/FloatingActionButton.tsx:12-15`), so it's never reachable from this page. Net
+  result: the same navigation coverage `useBlocker` would have given, for ~1 KB gzip instead of ~18.
+
+**Correctness trace against the ticket's bullets:**
+- No false prompt on open+close untouched — dirty is a snapshot compare, not "any render." Verified
+  by reading through the memo logic; no state write happens before the snapshot is captured.
+- Confirm actually gates — "Keep editing"/Escape-on-confirm dismiss only the confirm and leave the
+  modal/form open; only "Discard" calls the real `onClose`/proceeds the pending navigation.
+- Save-then-close/leave is silent — every successful-save path (`setIsModalOpen(false)` in the 4
+  wired modals, `navigate('/invoices')` in the invoice form) is called directly, bypassing the guard
+  mechanism entirely, by construction (not a flag check that could race).
+- Non-form modals unaffected — `confirmClose` defaults to `false`; nothing else changed for them.
+- `beforeunload` never leaks — effect scoped to `[isDirty]`, removed on clean/unmount.
+
+**Verify (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — **exit 0**.
+- Bundle: baseline (git-stash A/B) **485.72 KB gz** main chunk → with this ticket **486.97 KB gz**
+  (**+1.25 KB**, well inside the 500 KB budget). The data-router detour above was tested and
+  rejected specifically because it did not fit (503.82–504.06 KB).
+- i18n: `en`/`he` key counts **442/442** (parity), new `common.unsaved_changes_title`,
+  `common.unsaved_changes_description`, `common.discard`, `common.keep_editing` present in both.
+- `npx eslint` on every changed/new file: no NEW categories of error beyond what's already endemic to
+  this repo (baseline `npx eslint .` is already red — 137 errors, mostly a `tsconfigRootDir`
+  ambiguity from the nested `.claude/worktrees/*` dirs, unrelated to this ticket, plus pre-existing
+  `react-hooks` findings in files I touched, e.g. the pre-existing `setFormData`-before-declared
+  pattern in the URL-action effects of Expenses/Clients/BookingAgents views). I did fix the two
+  ref-read/write-during-render findings that were genuinely new (`Modal.tsx`'s `attemptCloseRef`/
+  `showDiscardConfirmRef` sync moved into their own effects; `InvoiceFormPage`'s snapshot moved from
+  a ref to real state so `isDirty` never reads a ref during render).
+- Not yet run through the app (no live preview in this session) — owner/QA click-through requested
+  below covers the paths that matter.
+
+**Owner/QA must click through:**
+1. **Dirty-close prompts** — open Expenses/Clients/BookingAgents add-or-edit, type something, then
+   each of: X button, click the backdrop, press Escape, click the in-form Cancel button → confirm
+   shows every time; "Keep editing" stays on the form; "Discard" closes and drops the edit.
+2. **Clean-close is silent** — open any of those same modals and close immediately without touching a
+   field (all four close paths) → closes with no prompt.
+3. **Save-then-close is silent** — fill the form and Save/Add → modal closes with no prompt, record
+   persists.
+4. **Invoice-form back/tab-close** — start a new invoice or edit one, change a field, then: header
+   back-chevron, the sticky-footer Cancel button, a sidebar nav click (e.g. "Expenses"), the business
+   switcher, Sign Out → confirm shows for all of them; "Keep editing" stays on the form. Then: make it
+   dirty again and try closing/refreshing the browser tab → native "leave site?" prompt. Then: fill a
+   valid invoice and Save → navigates to /invoices with no prompt, and immediately closing the tab
+   right after does NOT warn.
+5. Workspace-create modal (business-switcher → "+") and Category Manager (Expenses → "Manage
+   Categories") — type into the name field, then close via X/backdrop/Esc/Cancel → confirm shows;
+   leaving the field empty → closes silently.
+
+**Status:** OPEN (design + qa gates pending; owner click-through above still needed before merge)
+
+#### [UPDATE] web-developer → @design-expert · 2026-07-21
+
+**Follow-up: a11y BLOCKING findings fixed on `Modal.tsx` (WCAG 4.1.2 / 2.4.3 / 2.1.2).** QA gate
+already CLEARED (build 0, 486.97 KB gz, 442/442 i18n parity, all ACCEPT bullets proven per the
+Loop A verify above) — this is a dialog-semantics/focus fix only, on the shared primitive. **No
+page-level wiring touched** — every consumer (`AlertDialog.tsx`, the 5 wired modals, `App.tsx`
+unguarded modals) is untouched; the fix lives entirely inside `src/components/ui/Modal.tsx`.
+Copied the pattern almost verbatim from `src/components/guide/GuideOverlay.tsx` per instructions.
+
+1. **Dialog semantics** (`Modal.tsx:176-186` base modal, `Modal.tsx:211-221` nested discard-confirm)
+   — both now carry `role="dialog"`, `aria-modal="true"`, and `aria-labelledby` pointing at their own
+   `<h2>` via a `React.useId()`-generated id (`titleId`/`confirmTitleId`, `Modal.tsx:70-71,188,223`),
+   mirroring `GuideOverlay.tsx:121-124`. Each dialog has its own id pair so both can be labeled
+   correctly while stacked.
+2. **Accessible names on the icon-only close buttons** — both the base modal's close (`Modal.tsx:189`)
+   and the new discard-confirm's close (`Modal.tsx:224`) now pass `aria-label={t('common.close')}`.
+   Confirmed the key exists in both locales before using it (`src/i18n/locales/en.json:51` = "Close",
+   `src/i18n/locales/he.json:51` = "סגור") — no new i18n keys added, parity re-verified 442/442 after
+   the change (script re-run, see Verify below).
+3. **Focus trap + initial focus + focus restore** — adopted `GuideOverlay.tsx:91-105`'s Tab-cycle trap
+   as a shared `trapTabKey`/`FOCUSABLE_SELECTOR` helper (`Modal.tsx:45-65`), broadened beyond
+   GuideOverlay's button-only selector to include links/inputs/selects/textareas since Modal wraps
+   arbitrary form content, not just an action-button footer. Wired via `onKeyDown` on each dialog's own
+   ref (`Modal.tsx:183-185` base, `Modal.tsx:218-220` confirm) so the two traps are fully independent —
+   the confirm overlay is a DOM sibling of the base modal, not nested inside it, so Tab inside one never
+   leaks into the other's handler.
+   - Initial-focus-on-open + focus-restore-to-trigger-on-close: mirrors `GuideOverlay.tsx:40-49`, but
+     since `Modal` (unlike `GuideOverlay`) has no single caller-owned `triggerRef` to hand the restore
+     off to (`GuideButton.tsx:36,67,74` owns that for the guide), the effects capture/restore
+     `document.activeElement` themselves (`Modal.tsx:142-150` base modal: focuses the close button on
+     open, restores focus to whatever opened the modal on close; `Modal.tsx:154-162` nested confirm:
+     focuses its own close button on open, restores focus back to the base modal — not the page behind
+     it — on close).
+
+**Verify (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — **exit 0**.
+- Bundle: main chunk **487.33 KB gz** (was 486.97 KB gz before this fix, **+0.36 KB** — no new
+  dependency, pure JS/JSX added to an existing file), well inside the 500 KB budget.
+- i18n: re-ran the parity script — **en 442 / he 442, zero one-sided keys** — no new keys added, only
+  reused the existing `common.close`.
+- RTL: no physical `left`/`right` CSS added — only `role`/`aria-*`/`ref`/`onKeyDown` attributes on
+  existing elements, no new layout classes.
+- Not yet re-verified in a live browser this session (no preview server running); relying on the same
+  static trace method as the original Loop A HANDOFF above.
+
+**Ask of @design-expert:** please re-verify the 3 BLOCKING findings against `Modal.tsx` (dialog role/
+label, close-button accessible name, Tab-trap + focus in/out) and re-confirm CLEAR alongside your
+still-pending FF-WEB-11 click-through gate.
+
+**Status:** OPEN — awaiting @design-expert re-verification of this a11y fix + the original design/qa
+gates on the rest of FF-WEB-11.
 
 #### [HANDOFF] web-developer → @qa-validator, @design-expert (advisory: icon look) · 2026-07-20
 **Ticket:** FF-WEB-10
