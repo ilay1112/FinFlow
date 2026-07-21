@@ -325,7 +325,7 @@ export default function BookingAgentsView() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center text-slate-500 italic">
-                      {t('common.no_results') || 'No booking agents found'}
+                      {t('common.no_results') || 'No lead agents found'}
                     </TableCell>
                   </TableRow>
                 )}
@@ -360,7 +360,7 @@ export default function BookingAgentsView() {
                 <label className="text-sm font-medium">{t('bookingAgents.email_label')}</label>
                 <Input 
                   type="email" 
-                  placeholder="billing@bookingAgent.com" 
+                  placeholder="billing@leadagent.com"
                   className="h-11 md:h-10"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}

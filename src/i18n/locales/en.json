@@ -30,7 +30,7 @@
     "invoices": "Invoices",
     "invoices_receipts": "Income",
     "clients": "Clients",
-    "booking_agents": "Booking Agents",
+    "booking_agents": "Lead Agents",
     "taxes": "Taxes",
     "vat": "VAT",
     "profile": "Profile",
@@ -264,8 +264,8 @@
     "delete_description": "Are you sure you want to delete this client? This will not delete their existing invoices, but the client will be removed from your directory."
   },
   "bookingAgents": {
-    "title": "Booking Agents",
-    "subtitle": "Manage commissions and partnerships with booking agents.",
+    "title": "Lead Agents",
+    "subtitle": "Manage commissions and partnerships with lead agents.",
     "add_bookingAgent": "Add Agent",
     "edit_bookingAgent": "Edit Agent",
     "total_bookingAgents": "Total Agents",
@@ -283,7 +283,7 @@
     "pay_agent": "Pay Agent",
     "history": "Invoice History",
     "delete_title": "Delete Agent",
-    "delete_description": "Are you sure you want to delete this booking agent? Their associated commission records on invoices will remain, but the agent will be removed from your directory."
+    "delete_description": "Are you sure you want to delete this agent? Their associated commission records on invoices will remain, but the agent will be removed from your directory."
   },
   "taxes": {
     "subtitle": "Projected tax liability based on current performance.",
@@ -505,11 +505,11 @@
       }
     },
     "bookingAgents": {
-      "title": "Booking agents",
+      "title": "Lead agents",
       "steps": {
         "overview": {
-          "title": "What booking agents are",
-          "body": "If a booking agent brings you clients for a commission, track them here instead of as a regular client."
+          "title": "What lead agents are",
+          "body": "If a lead agent brings you clients for a commission, track them here instead of as a regular client."
         },
         "commission": {
           "title": "Commission rate",

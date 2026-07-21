@@ -124,7 +124,7 @@ export function AppLayout() {
     { name: t('common.expenses'), href: '/expenses', icon: Receipt },
     { name: t('common.invoices_receipts') || t('common.invoices'), href: '/invoices', icon: FileText },
     { name: t('common.clients'), href: '/clients', icon: Users },
-    { name: t('common.booking_agents') || 'Booking Agents', href: '/booking-agents', icon: Briefcase },
+    { name: t('common.booking_agents') || 'Lead Agents', href: '/booking-agents', icon: Briefcase },
     { name: t('common.taxes'), href: '/taxes', icon: Calculator },
     // VAT reporting only applies to a VAT-registered business; an Osek Patur files
     // no Doch Maam, so the nav item is hidden for them.
