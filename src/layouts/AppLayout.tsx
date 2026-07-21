@@ -24,6 +24,7 @@ import { Button } from '../components/ui/Button';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useAuth } from '../context/AuthContext';
 import { useFinance } from '../context/FinanceContext';
+import { useGuardedNavigate } from '../context/NavigationGuardContext';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { FloatingActionButton } from '../components/FloatingActionButton';
@@ -34,6 +35,10 @@ export function AppLayout() {
   const { user, logout, login, isAuthenticated } = useAuth();
   const { isLoading, isSyncing, syncError, hasUnsyncedChanges, sessionExpired, businesses, activeBusiness, switchBusiness, createBusiness, businessSettings } = useFinance();
   const navigate = useNavigate();
+  // FF-WEB-11 — routes every exit reachable from the shell (sidebar links, the
+  // business switcher, Sign Out) through whatever unsaved-changes guard a dirty
+  // page (currently only InvoiceFormPage) has registered; a no-op when none has.
+  const guardedNavigate = useGuardedNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBusinessDropdownOpen, setIsBusinessDropdownOpen] = useState(false);
   const [isCreateBusinessModalOpen, setIsCreateBusinessModalOpen] = useState(false);
@@ -71,9 +76,11 @@ export function AppLayout() {
     : syncStatus === 'error' ? t('common.sync_offline')
     : t('common.sync_synced');
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+  const handleLogout = () => {
+    guardedNavigate(async () => {
+      await logout();
+      navigate('/login');
+    });
   };
 
   useEffect(() => {
@@ -97,6 +104,10 @@ export function AppLayout() {
       document.body.style.overflow = 'unset';
     };
   }, [isSidebarOpen]);
+
+  // Unsaved-changes guard (FF-WEB-11): the only "data" this modal can lose is a
+  // typed-but-unsubmitted workspace name.
+  const isCreateBusinessFormDirty = newBusinessName.trim().length > 0;
 
   const handleCreateBusiness = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,8 +192,11 @@ export function AppLayout() {
                         activeBusiness?.id === business.id ? "bg-primary/10 text-primary" : "text-slate-700 hover:bg-slate-100"
                       )}
                       onClick={() => {
-                        switchBusiness(business.id);
                         setIsBusinessDropdownOpen(false);
+                        // Switching workspace mid-edit would pull the rug out from
+                        // under whatever record a dirty form is editing — guard it
+                        // the same as a route change.
+                        guardedNavigate(() => switchBusiness(business.id));
                       }}
                     >
                       {business.name}
@@ -193,9 +207,11 @@ export function AppLayout() {
                   <NavLink
                     to="/profile"
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
                       setIsBusinessDropdownOpen(false);
                       setIsSidebarOpen(false);
+                      guardedNavigate(() => navigate('/profile'));
                     }}
                   >
                     <div className="bg-white rounded p-1 shadow-sm border border-slate-200">
@@ -225,7 +241,11 @@ export function AppLayout() {
               <NavLink
                 key={item.name}
                 to={item.href}
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setIsSidebarOpen(false);
+                  guardedNavigate(() => navigate(item.href));
+                }}
                 className={({ isActive }) => cn(
                   "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
                   isActive 
@@ -443,16 +463,18 @@ export function AppLayout() {
       />
 
       {/* Create Workspace Modal */}
-      <Modal 
-        isOpen={isCreateBusinessModalOpen} 
-        onClose={() => setIsCreateBusinessModalOpen(false)} 
+      <Modal
+        isOpen={isCreateBusinessModalOpen}
+        onClose={() => setIsCreateBusinessModalOpen(false)}
+        confirmClose={isCreateBusinessFormDirty}
         title={t('common.create_workspace')}
       >
+        {({ requestClose }) => (
         <form onSubmit={handleCreateBusiness} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">{t('common.workspace_name')}</label>
-            <Input 
-              placeholder={t('common.workspace_placeholder')} 
+            <Input
+              placeholder={t('common.workspace_placeholder')}
               value={newBusinessName}
               onChange={(e) => setNewBusinessName(e.target.value)}
               autoFocus
@@ -460,7 +482,7 @@ export function AppLayout() {
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={() => setIsCreateBusinessModalOpen(false)}>
+            <Button type="button" variant="outline" onClick={requestClose}>
               {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!newBusinessName.trim() || isLoading}>
@@ -468,6 +490,7 @@ export function AppLayout() {
             </Button>
           </div>
         </form>
+        )}
       </Modal>
     </div>
   );

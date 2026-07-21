@@ -67,6 +67,10 @@
     "sync_offline": "לא מקוון",
     "sync_unsynced": "שינויים שלא נשמרו",
     "sync_reconnect": "התחבר מחדש לסנכרון",
+    "unsaved_changes_title": "שינויים שלא נשמרו",
+    "unsaved_changes_description": "יש לך שינויים שלא נשמרו — לבטל אותם? כל המידע שהוזן יאבד.",
+    "discard": "בטל שינויים",
+    "keep_editing": "המשך לערוך",
     "sync_reconnect_hint": "תוקף ההתחברות פג. השינויים נשמרו במכשיר זה — התחבר/י שוב כדי לגבותם ל-Drive."
   },
   "session": {

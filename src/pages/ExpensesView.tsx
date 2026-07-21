@@ -33,7 +33,7 @@ import { CategoryManagerModal } from '../components/ui/CategoryManagerModal';
 import { RowActions } from '../components/ui/RowActions';
 import { TablePagination } from '../components/ui/TablePagination';
 import { GuideButton } from '../components/guide/GuideButton';
-import { cn } from '../utils/utils';
+import { cn, deepEqual } from '../utils/utils';
 import { v4 as uuidv4 } from 'uuid';
 
 type SortKey = 'date' | 'vendor' | 'category' | 'amount';
@@ -194,6 +194,11 @@ export default function ExpensesView() {
     vatDeductibility: 'full' as VatDeductibility,
     supplierAllocationNumber: ''
   });
+  // Snapshot captured whenever the add/edit modal opens (empty defaults for "add",
+  // the record's values for "edit") — the unsaved-changes guard (FF-WEB-11) compares
+  // the live formData against THIS, not against "any render touched state".
+  const [initialFormData, setInitialFormData] = useState(formData);
+  const isExpenseFormDirty = !deepEqual(formData, initialFormData);
 
   const handleSort = (key: SortKey) => {
     setSortConfig(prev => ({
@@ -237,7 +242,7 @@ export default function ExpensesView() {
     if (expense) {
       setEditingExpense(expense);
       setIsNewReceiptAction(false);
-      setFormData({
+      const nextFormData = {
         date: expense.date,
         vendor: expense.vendor,
         category: expense.category,
@@ -249,26 +254,30 @@ export default function ExpensesView() {
         hasValidTaxInvoice: expense.hasValidTaxInvoice ?? false,
         vatDeductibility: expense.vatDeductibility ?? 'none',
         supplierAllocationNumber: expense.supplierAllocationNumber || ''
-      });
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
     } else {
       setEditingExpense(null);
-      // isNewReceiptAction is handled by the useEffect for URL actions, 
+      // isNewReceiptAction is handled by the useEffect for URL actions,
       // but if opened via the '+' button, it should be false.
-      if (!isNewReceiptAction) setIsNewReceiptAction(false); 
-      
+      if (!isNewReceiptAction) setIsNewReceiptAction(false);
+
       const defaultCategory = categories.length > 0 ? categories[0] : 'Other';
-      setFormData({
+      const nextFormData = {
         date: new Date().toISOString().split('T')[0],
         vendor: '',
         category: defaultCategory,
         amount: '',
-        receiptStatus: 'Missing',
+        receiptStatus: 'Missing' as const,
         receiptName: '',
         receiptUrl: '',
         hasValidTaxInvoice: false,
         vatDeductibility: suggestDeductibility(defaultCategory),
         supplierAllocationNumber: ''
-      });
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
     }
     setIsModalOpen(true);
   };
@@ -718,17 +727,19 @@ export default function ExpensesView() {
       />
 
       {/* Add/Edit Expense Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        confirmClose={isExpenseFormDirty}
         title={
-          editingExpense 
-            ? t('expenses.edit_expense') 
-            : isNewReceiptAction 
-              ? t('dashboard.new_receipt') 
+          editingExpense
+            ? t('expenses.edit_expense')
+            : isNewReceiptAction
+              ? t('dashboard.new_receipt')
               : t('expenses.add_expense')
         }
       >
+        {({ requestClose }) => (
         <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -892,7 +903,7 @@ export default function ExpensesView() {
             })()}
 
             <div className="flex justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="px-8 font-bold">
+              <Button type="button" variant="outline" onClick={requestClose} className="px-8 font-bold">
                 {t('common.cancel')}
               </Button>
               <Button type="submit" className="px-8 font-bold">
@@ -901,6 +912,7 @@ export default function ExpensesView() {
             </div>
           </form>
         </div>
+        )}
       </Modal>
     </div>
   );

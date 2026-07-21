@@ -32,8 +32,19 @@ export function CategoryManagerModal({
     }
   };
 
+  // A partially-typed, un-submitted category name is the only "unsaved" state this
+  // modal can lose (adds/deletes to the list itself are applied immediately, not
+  // draft state) — guard closing while there's text sitting in the input.
+  const isDirty = newCategory.trim().length > 0;
+
+  const handleClose = () => {
+    setNewCategory('');
+    onClose();
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t('expenses.manage_categories') || 'Manage Categories'}>
+    <Modal isOpen={isOpen} onClose={handleClose} confirmClose={isDirty} title={t('expenses.manage_categories') || 'Manage Categories'}>
+      {({ requestClose }) => (
       <div className="space-y-6 touch-pan-y overflow-x-hidden">
         <form onSubmit={handleAdd} className="flex gap-2">
           <Input 
@@ -74,11 +85,12 @@ export function CategoryManagerModal({
         </div>
 
         <div className="flex justify-end pt-4 border-t">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={requestClose}>
             {t('common.close') || 'Close'}
           </Button>
         </div>
       </div>
+      )}
     </Modal>
   );
 }

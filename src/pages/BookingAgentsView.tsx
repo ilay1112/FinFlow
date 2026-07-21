@@ -24,6 +24,15 @@ import { AlertDialog } from '../components/ui/AlertDialog';
 import { RowActions } from '../components/ui/RowActions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import { GuideButton } from '../components/guide/GuideButton';
+import { deepEqual } from '../utils/utils';
+
+interface BookingAgentFormData {
+  name: string;
+  email: string;
+  phone: string;
+  commissionRate: number | '';
+  minCommission: number | '';
+}
 
 export default function BookingAgentsView() {
   const { t } = useTranslation();
@@ -52,34 +61,34 @@ export default function BookingAgentsView() {
     
     if (action === 'new') {
       setEditingBookingAgent(null);
-      setFormData({ 
-        name: nameParam || '', 
-        email: '', 
-        phone: '', 
+      const nextFormData: BookingAgentFormData = {
+        name: nameParam || '',
+        email: '',
+        phone: '',
         commissionRate: '',
-        minCommission: '' 
-      });
+        minCommission: ''
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
       setIsModalOpen(true);
-      
+
       // Remove the parameter after opening
       navigate(location.pathname, { replace: true });
     }
   }, [location.search]);
 
   // Form State
-  const [formData, setFormData] = useState<{
-    name: string;
-    email: string;
-    phone: string;
-    commissionRate: number | '';
-    minCommission: number | '';
-  }>({
+  const [formData, setFormData] = useState<BookingAgentFormData>({
     name: '',
     email: '',
     phone: '',
     commissionRate: '',
     minCommission: ''
   });
+  // Snapshot captured whenever the add/edit modal opens — the unsaved-changes guard
+  // (FF-WEB-11) compares live formData against THIS, not against "any render".
+  const [initialFormData, setInitialFormData] = useState(formData);
+  const isBookingAgentFormDirty = !deepEqual(formData, initialFormData);
 
   const [showMinCommission, setShowMinCommission] = useState(false);
 
@@ -95,23 +104,27 @@ export default function BookingAgentsView() {
   const handleOpenModal = (bookingAgent?: BookingAgent) => {
     if (bookingAgent) {
       setEditingBookingAgent(bookingAgent);
-      setFormData({
+      const nextFormData: BookingAgentFormData = {
         name: bookingAgent.name,
         email: bookingAgent.email,
         phone: bookingAgent.phone,
         commissionRate: bookingAgent.commissionRate,
         minCommission: bookingAgent.minCommission ?? ''
-      });
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
       setShowMinCommission(!!bookingAgent.minCommission);
     } else {
       setEditingBookingAgent(null);
-      setFormData({ 
-        name: '', 
-        email: '', 
-        phone: '', 
-        commissionRate: '', 
-        minCommission: '' 
-      });
+      const nextFormData: BookingAgentFormData = {
+        name: '',
+        email: '',
+        phone: '',
+        commissionRate: '',
+        minCommission: ''
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
       setShowMinCommission(false);
     }
     setIsModalOpen(true);
@@ -323,11 +336,13 @@ export default function BookingAgentsView() {
       </Card>
 
       {/* Add/Edit BookingAgent Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        confirmClose={isBookingAgentFormDirty}
         title={editingBookingAgent ? t('bookingAgents.edit_bookingAgent') : t('bookingAgents.add_bookingAgent')}
       >
+        {({ requestClose }) => (
         <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="space-y-2">
@@ -418,7 +433,7 @@ export default function BookingAgentsView() {
               )}
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-11 md:h-10 order-2 sm:order-1">
+              <Button type="button" variant="outline" onClick={requestClose} className="h-11 md:h-10 order-2 sm:order-1">
                 {t('common.cancel')}
               </Button>
               <Button type="submit" className="h-11 md:h-10 px-8 order-1 sm:order-2 font-bold">
@@ -427,6 +442,7 @@ export default function BookingAgentsView() {
             </div>
           </form>
         </div>
+        )}
       </Modal>
 
       {/* Invoice History Modal */}

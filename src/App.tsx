@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
+import { NavigationGuardProvider } from './context/NavigationGuardContext';
 import { AppLayout } from './layouts/AppLayout';
 import { AlertCircle } from 'lucide-react';
 
@@ -53,14 +54,11 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Pages */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
-
-      {/* Protected Application Routes */}
-      <Route 
-        path="/" 
+      <Route
+        path="/"
         element={
           <ProtectedRoute>
             <AppLayout />
@@ -78,8 +76,6 @@ function AppRoutes() {
         <Route path="vat" element={<VatReportPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
-
-      {/* Catch-all redirect */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -139,7 +135,9 @@ function App() {
         <AuthProvider>
           <FinanceProvider>
             <BrowserRouter>
-              <AppRoutes />
+              <NavigationGuardProvider>
+                <AppRoutes />
+              </NavigationGuardProvider>
             </BrowserRouter>
           </FinanceProvider>
         </AuthProvider>

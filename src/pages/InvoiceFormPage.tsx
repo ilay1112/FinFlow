@@ -15,7 +15,10 @@ import {
 import { useFinance, type Invoice, type InvoiceItem, type DocumentType, type PaymentMethod, type PaymentLine, type VatTreatment } from '../context/FinanceContext';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { AlertDialog } from '../components/ui/AlertDialog';
 import { useCurrencyFormatter } from '../utils/format';
+import { deepEqual } from '../utils/utils';
+import { useGuardedNavigate, useUnsavedChangesLeaveGuard } from '../context/NavigationGuardContext';
 import {
   computeTotals,
   computeCommission,
@@ -172,13 +175,74 @@ export default function InvoiceFormPage() {
     };
   });
 
+  // Snapshot of the form's starting values (FF-WEB-11 unsaved-changes guard) — for a
+  // new/from-source invoice this is the seeded defaults; for an edit it's the loaded
+  // record. Captured in the same mount effect that seeds the search-term inputs so
+  // the snapshot's clientSearchTerm/agentSearchTerm match what the form settles on,
+  // not the pre-seed empty string from the very first render. Plain state (not a
+  // ref) so reading it while computing `isDirty` below is safe during render.
+  const [initialSnapshot, setInitialSnapshot] = useState<{
+    formData: InvoiceFormData;
+    clientSearchTerm: string;
+    agentSearchTerm: string;
+  } | null>(null);
+  // Set once a successful save has navigated away. Read only from event-handler
+  // code (handleSubmit, the beforeunload listener) — never during render — so it's
+  // a ref: the save path doesn't need `isDirty` itself to flip (the component
+  // unmounts a moment later anyway; see the comments below).
+  const savedRef = useRef(false);
+
   useEffect(() => {
     const seed = editingInvoice ?? sourceInvoice;
     if (seed) {
       setClientSearchTerm(seed.clientName);
       setAgentSearchTerm(seed.bookingAgentName || '');
     }
+    setInitialSnapshot({
+      formData,
+      clientSearchTerm: seed ? seed.clientName : '',
+      agentSearchTerm: seed ? (seed.bookingAgentName || '') : '',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const isDirty = useMemo(() => {
+    if (!initialSnapshot) return false;
+    return (
+      clientSearchTerm !== initialSnapshot.clientSearchTerm ||
+      agentSearchTerm !== initialSnapshot.agentSearchTerm ||
+      !deepEqual(formData, initialSnapshot.formData)
+    );
+  }, [formData, clientSearchTerm, agentSearchTerm, initialSnapshot]);
+
+  // (2) Browser tab close / refresh — only attached while there's actually something
+  // to lose, and removed the instant that's no longer true (clean, or saved).
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Sees the up-to-the-instant value (a ref read inside an event handler, not
+      // during render) — covers the sliver of time after a successful save where
+      // this effect hasn't yet re-run to detach itself (isDirty won't flip until
+      // the component unmounts navigating away; see confirmDiscard/handleSubmit).
+      if (savedRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  // (1) In-app navigation — the Cancel button, the header back button, and the
+  // "add new client"/"add new agent" links below all route their `navigate(...)`
+  // through `guardedNavigate`; AppLayout does the same for its sidebar links, the
+  // business switcher, and Sign Out, so every exit reachable while this page is on
+  // screen goes through the SAME "discard unsaved changes?" confirm below. (Not
+  // react-router's `useBlocker`: that needs a data router, and switching this app's
+  // <BrowserRouter> to one cost ~17 KB gzip the ~500 KB bundle budget doesn't have.)
+  // A successful save calls `navigate()` directly (never `guardedNavigate`), so it
+  // never has to wait for `isDirty` to flip false — see handleSubmit.
+  const guardedNavigate = useGuardedNavigate();
+  const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesLeaveGuard(isDirty);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -414,6 +478,10 @@ export default function InvoiceFormPage() {
         updateInvoice(sourceInvoice.id, { status: 'Paid' });
       }
     }
+
+    // FF-WEB-11: clear the dirty flag BEFORE navigating away so neither the
+    // useBlocker nor the beforeunload guard fires on this, the normal save path.
+    savedRef.current = true;
     navigate('/invoices');
   };
 
@@ -423,7 +491,7 @@ export default function InvoiceFormPage() {
       <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex items-center gap-3 shadow-sm">
         <button
           type="button"
-          onClick={() => navigate('/invoices')}
+          onClick={() => guardedNavigate(() => navigate('/invoices'))}
           className="p-2 -ms-2 rounded-full hover:bg-slate-100 transition-colors text-slate-600"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -514,7 +582,7 @@ export default function InvoiceFormPage() {
                   <button
                     type="button"
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
-                    onClick={() => navigate(`/clients?action=new&name=${encodeURIComponent(clientSearchTerm)}`)}
+                    onClick={() => guardedNavigate(() => navigate(`/clients?action=new&name=${encodeURIComponent(clientSearchTerm)}`))}
                   >
                     <div className="bg-slate-200 p-1 rounded"><UserPlus className="h-3 w-3" /></div>
                     <span>{t('clients.add_client')}</span>
@@ -769,7 +837,7 @@ export default function InvoiceFormPage() {
                   <button
                     type="button"
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
-                    onClick={() => navigate(`/booking-agents?action=new&name=${encodeURIComponent(agentSearchTerm)}`)}
+                    onClick={() => guardedNavigate(() => navigate(`/booking-agents?action=new&name=${encodeURIComponent(agentSearchTerm)}`))}
                   >
                     <UserPlus className="h-3 w-3" />
                     <span>Add New Agent</span>
@@ -880,7 +948,7 @@ export default function InvoiceFormPage() {
           type="button"
           variant="outline"
           className="flex-1 h-12"
-          onClick={() => navigate('/invoices')}
+          onClick={() => guardedNavigate(() => navigate('/invoices'))}
         >
           {t('common.cancel')}
         </Button>
@@ -897,6 +965,21 @@ export default function InvoiceFormPage() {
               : t('invoices.create_invoice')}
         </Button>
       </div>
+
+      {/* FF-WEB-11 — blocks Cancel / header back / "add client"/"add agent" / sidebar
+          nav / the business switcher / Sign Out while the form is dirty. Keep editing
+          dismisses it and stays on the form; Discard runs the navigation that was
+          attempted. */}
+      <AlertDialog
+        isOpen={isBlocked}
+        onClose={cancelDiscard}
+        onConfirm={confirmDiscard}
+        title={t('common.unsaved_changes_title')}
+        description={t('common.unsaved_changes_description')}
+        confirmText={t('common.discard')}
+        cancelText={t('common.keep_editing')}
+        variant="destructive"
+      />
     </div>
   );
 }

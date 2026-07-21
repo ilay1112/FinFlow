@@ -67,6 +67,10 @@
     "sync_offline": "Offline",
     "sync_unsynced": "Unsaved changes",
     "sync_reconnect": "Reconnect to sync",
+    "unsaved_changes_title": "Unsaved changes",
+    "unsaved_changes_description": "You have unsaved changes — discard them? All entered data will be lost.",
+    "discard": "Discard",
+    "keep_editing": "Keep editing",
     "sync_reconnect_hint": "Your session expired. Changes are saved on this device — sign in again to back them up to Drive."
   },
   "session": {

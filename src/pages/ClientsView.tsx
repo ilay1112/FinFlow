@@ -23,6 +23,7 @@ import { Badge } from '../components/ui/Badge';
 import { AlertDialog } from '../components/ui/AlertDialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import { GuideButton } from '../components/guide/GuideButton';
+import { deepEqual } from '../utils/utils';
 
 export default function ClientsView() {
   const { t } = useTranslation();
@@ -45,15 +46,17 @@ export default function ClientsView() {
     
     if (action === 'new') {
       setEditingClient(null);
-      setFormData({
+      const nextFormData = {
         name: nameParam || '',
         email: '',
         phone: '',
         address: '',
         idNumber: ''
-      });
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
       setIsModalOpen(true);
-      
+
       // Remove the parameter after opening
       navigate(location.pathname, { replace: true });
     }
@@ -67,6 +70,10 @@ export default function ClientsView() {
     address: '',
     idNumber: ''
   });
+  // Snapshot captured whenever the add/edit modal opens — the unsaved-changes guard
+  // (FF-WEB-11) compares live formData against THIS, not against "any render".
+  const [initialFormData, setInitialFormData] = useState(formData);
+  const isClientFormDirty = !deepEqual(formData, initialFormData);
 
   const filteredClients = clients.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -80,16 +87,20 @@ export default function ClientsView() {
   const handleOpenModal = (client?: Client) => {
     if (client) {
       setEditingClient(client);
-      setFormData({
+      const nextFormData = {
         name: client.name,
         email: client.email,
         phone: client.phone,
         address: client.address,
         idNumber: client.idNumber || ''
-      });
+      };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
     } else {
       setEditingClient(null);
-      setFormData({ name: '', email: '', phone: '', address: '', idNumber: '' });
+      const nextFormData = { name: '', email: '', phone: '', address: '', idNumber: '' };
+      setFormData(nextFormData);
+      setInitialFormData(nextFormData);
     }
     setIsModalOpen(true);
   };
@@ -272,11 +283,13 @@ export default function ClientsView() {
       </Card>
 
       {/* Add/Edit Client Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        confirmClose={isClientFormDirty}
         title={editingClient ? t('clients.edit_client') : t('clients.add_client')}
       >
+        {({ requestClose }) => (
         <div className="max-h-[80vh] md:max-h-[85vh] overflow-y-auto overflow-x-hidden touch-pan-y px-1 scrollbar-hide">
           <form onSubmit={handleSubmit} className="space-y-4 pb-4">
             <div className="space-y-2">
@@ -330,7 +343,7 @@ export default function ClientsView() {
               />
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-11 md:h-10 order-2 sm:order-1">
+              <Button type="button" variant="outline" onClick={requestClose} className="h-11 md:h-10 order-2 sm:order-1">
                 {t('common.cancel')}
               </Button>
               <Button type="submit" className="h-11 md:h-10 px-8 order-1 sm:order-2 font-bold">
@@ -339,6 +352,7 @@ export default function ClientsView() {
             </div>
           </form>
         </div>
+        )}
       </Modal>
 
       {/* Invoice History Modal */}
