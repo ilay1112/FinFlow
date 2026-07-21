@@ -58,7 +58,7 @@ The orchestrator owns this table. Statuses: `Backlog · Ready · In Progress · 
 | FF-DOC-2    | Sweep remaining FinFlow→tbiz / `com.finflow.app` refs in vault `ARCHITECTURE.md` (title, §1-3) — rebrand only touched the repo | backend-platform | — | **Folded into FF-DOC-3** |
 | FF-DOC-3    | Full vault doc refresh (FinFlow.md + ARCHITECTURE.md): rebrand sweep + everything shipped since — FF-DATA-4/9, FF-WEB-4/5/6/8/9/10, /lp, PWA, current stage/status | backend-platform | — | **Done** — both vault docs resynced to main @ 1aa4f33 (2026-07-21); fixed stale app_data.json-monolith framing in FinFlow.md §2/§6; tbiz sweep complete (historical refs kept deliberately) |
 | FF-WEB-11   | Unsaved-changes guard: "discard? entered data will be lost" confirm when closing a DIRTY data-entry modal (X/backdrop/Esc) or leaving the dirty invoice form (Cancel/back/in-app nav/tab-close); clean forms + post-save close without prompt | web-developer | design, qa | Shipped to main (c4c414a) — qa CLEAR, design CLEAR (a11y re-verified). Live signed-in click-through of the 5 modals + invoice form still owner-only (app is Google-auth-gated; no demo bypass) |
-| FF-WEB-12   | Rename "Booking Agents"→"Lead Agents" / "סוכני הזמנות"→"סוכני לידים" across ALL user-facing UI (nav, titles, buttons, empty/search states, guide, he+en incl. singular); KEEP internal bookingAgent* fields, `bookingAgents` Drive shard, `/booking-agents` route (label-only, no data migration) | web-developer | qa (+ design advisory) | Queued — starts after FF-WEB-11 (shared files: i18n, BookingAgentsView, InvoiceFormPage) |
+| FF-WEB-12   | Rename "Booking Agents"→"Lead Agents" / "סוכני הזמנות"→"סוכני לידים" across ALL user-facing UI (nav, titles, buttons, empty/search states, guide, he+en incl. singular); KEEP internal bookingAgent* fields, `bookingAgents` Drive shard, `/booking-agents` route (label-only, no data migration) | web-developer | qa (+ design advisory) | Shipped to main (3a4be8b) — qa CLEAR (parity 442/442, 0 old strings, plumbing intact), design advisory CLEAR (Hebrew idiomatic; EN delete_description trimmed to match brevity). Nav + title "סוכני לידים" + Lead Agents view live-verified in authenticated Chrome |
 | FF-WEB-002  | Optional invoice notes field, shown on the PDF | web-developer   | qa, design, tax-bookkeeper  | Done (see caveat) |
 | FF-WEB-4    | Invoice creation: relabel payment section (תשלומים→אמצעי תשלום, form only); limit קבלה-from-חשבונית עסקה to one non-cancelled | web-developer | qa (+ tax-logic advisory) | In Validation — qa CLEAR (PDF label safe; 3-guard limit; cancelled frees source); staged on `feat/web-4-receipt-limit` for owner click-through. Advisory: limit rules out installment/partial-payment receipts (owner-accepted) |
 | FF-DATA-1   | Rebrand: Drive root folder rename + migration (`FinFlow Data`→`tbiz Data`) | web-developer | security, qa | **Done** — gates CLEAR; owner ran live migration drill; shipped (e82422b) |
@@ -75,6 +75,102 @@ reference board. Standing backlog: `architecture/ARCHITECTURE.md` §13 (Known Ga
 ## Open threads
 
 <!-- Newest ticket threads on top. One H3 thread per ticket. Append entry blocks chronologically. -->
+
+### FF-WEB-12 — Rebrand "Booking Agents"→"Lead Agents" (label only)
+
+#### [HANDOFF] web-developer → @qa-validator, @design-expert (advisory, Hebrew copy) · 2026-07-21
+**Ticket:** FF-WEB-12
+**Branch:** none created — changes are uncommitted on `main` per instructions (not staged to a
+feature branch or committed to git). Supervisor to confirm branch routing before merge. No new npm
+dependency.
+
+Label-only terminology rebrand, explicitly **not** a data migration. Every internal identifier,
+the Drive shard, and the route were left untouched by design.
+
+**Files changed (4):**
+- `src/i18n/locales/en.json` — `common.booking_agents` value "Booking Agents"→"Lead Agents"
+  (`:33`); `bookingAgents.title`/`bookingAgents.subtitle` (`:267-268`);
+  `bookingAgents.delete_description` (`:286`, "delete this booking agent?"→"delete this lead
+  agent?"); guide section `guide.bookingAgents.title`/`.steps.overview.title`/`.steps.overview.body`
+  (`:508,511-512`).
+- `src/i18n/locales/he.json` — mirror of the above: `common.booking_agents` (`:33`) "סוכני הזמנות"→
+  "סוכני לידים"; `bookingAgents.title`/`.subtitle` (`:267-268`); guide
+  `title`/`.steps.overview.title`/`.steps.overview.body` (`:508,511-512`). He `delete_description`
+  (`:286`) needed **no** change — it already read "למחוק סוכן זה" (generic "this agent"), never said
+  "הזמנות".
+- `src/pages/BookingAgentsView.tsx` — two hardcoded (non-t()) strings: the empty-state fallback
+  `'No booking agents found'`→`'No lead agents found'` (`:328`, only shown if `common.no_results` is
+  ever falsy) and the email input's example placeholder `"billing@bookingAgent.com"`→
+  `"billing@leadagent.com"` (`:363`, cosmetic placeholder text, not a real domain either way).
+- `src/layouts/AppLayout.tsx` — nav item's hardcoded fallback for `t('common.booking_agents')`
+  (`:127`, `|| 'Booking Agents'`→`|| 'Lead Agents'`); only renders if the key is ever missing, kept
+  in sync with the JSON value regardless.
+
+**Key names untouched everywhere** (`booking_agents`, `bookingAgents.*`, `guide.bookingAgents.*`) —
+only string VALUES changed, per the ticket's key-parity requirement.
+
+**What I deliberately did NOT touch (verified still intact):**
+- Internal identifiers: `BookingAgent` type, `bookingAgentId`/`bookingAgentName` fields,
+  `bookingAgents` state/vars — all through `src/context/FinanceContext.tsx`,
+  `src/pages/BookingAgentsView.tsx`, `src/pages/InvoiceFormPage.tsx`, `src/services/googleDrive.ts`,
+  `src/utils/appStateSchema.ts`, `src/utils/financeCache.ts`, `src/utils/guideStorage.ts`,
+  `src/components/guide/guideSteps.ts` (translation-key references only, not values).
+- Drive shard: `bookingAgents: 'bookingAgents.json.gz'` (`src/services/googleDrive.ts:35`) and the
+  `SHARD_NAMES`/`ENTITY_SHARD_ORDER` entity key `'bookingAgents'` — unchanged (renaming needs a data
+  migration, explicitly out of scope).
+- Route: `/booking-agents` (`src/App.tsx:74`) and its nav `href` — unchanged.
+- Generic labels that never said "booking" to begin with were left as-is by design, not oversight:
+  `add_bookingAgent` "Add Agent", `edit_bookingAgent` "Edit Agent", `total_bookingAgents` "Total
+  Agents", `top_bookingAgent` "Top Agent", `delete_title` "Delete Agent" (en+he) — none of these
+  values ever contained the word "booking"/"הזמנות", so there was nothing to rebrand in them; they
+  already read as agent-agnostic labels.
+- Code-only comments (`// price and booking agent`, `{/* Booking Agent */}`,
+  `/** Booking-agent commission = ... */` in `src/utils/invoiceMath.ts:60`) — not user-facing, left
+  alone per scope.
+
+**Grep evidence — no user-facing "Booking Agent"/"סוכני הזמנות" remains:**
+- Full-repo case-insensitive sweep for `[Bb]ooking[ _]?[Aa]gent|סוכני הזמנות|סוכן הזמנות` under
+  `src/` returns only: internal identifiers/vars/types (`bookingAgentId`, `BookingAgent`,
+  `bookingAgents` shard/state/route/keys), i18n **key names** (values already rebranded), and two
+  non-user-facing code comments. Zero remaining string VALUES contain "Booking Agent" or "סוכני
+  הזמנות" wording.
+- Scripted scan of every string value in both `en.json` and `he.json` for
+  `/booking agent/i` / `סוכני הזמנות` / `סוכן הזמנות` → **0 matches** in either locale.
+
+**i18n parity:** `en.json` 442 keys / `he.json` 442 keys, key-for-key identical set (scripted diff,
+zero keys only-in-en or only-in-he).
+
+**Verify (Loop A):**
+- `npm run build` (`tsc -b && vite build`) — **exit 0**, TypeScript strict clean.
+- Bundle: main chunk **487.33 KB gz** (`dist/assets/index-CBIdPmKw.js`), unchanged from the
+  ~487 KB pre-ticket baseline (text-only edit, no new imports/deps) — well inside the 500 KB budget.
+- RTL: no new markup, no new `left`/`right`-style properties introduced; existing logical-property
+  usage in `BookingAgentsView.tsx`/guide components untouched.
+- Not run through the live app this session — `/booking-agents` sits behind `ProtectedRoute`
+  (`src/App.tsx:36-42`, Google-auth-gated, no demo bypass) and this container has no authenticated
+  session or browser driver (`chromium-cli` unavailable), same limitation noted on FF-WEB-9/10/11.
+  Owner/QA click-through requested below.
+
+**Owner/QA must click through:**
+1. Sidebar nav — English: item reads "Lead Agents" (was "Booking Agents"), links to
+   `/booking-agents` unchanged. Hebrew: item reads "סוכני לידים".
+2. `/booking-agents` view — page title/subtitle read "Lead Agents"/"Manage commissions and
+   partnerships with lead agents." (he: "סוכני לידים"/matching subtitle); search placeholder, table
+   headers, add/edit modal, delete-confirm copy (en now says "delete this lead agent?"), and the
+   empty-state text (if ever shown) all read naturally in both locales.
+3. Invoice form's agent picker — label above the agent search input reads "Lead Agents" / "סוכני
+   לידים" (`InvoiceFormPage.tsx:783`, driven by the same `common.booking_agents` key — no direct
+   edit needed there).
+4. First-time guide walkthrough for this view — step titles/body now say "Lead agents"/"What lead
+   agents are"/"If a lead agent brings you clients..." (he: "סוכני לידים"/"מהם סוכני לידים"/"אם
+   סוכן לידים מביא לכם...").
+5. Confirm existing booking-agent records (created before this change) still load/display/edit/
+   delete correctly — no data-shape change was made, this is purely a label swap.
+
+**Status:** OPEN (qa + design gates pending; owner sign-in-gated click-through above still needed
+before merge)
+
+---
 
 ### FF-WEB-11 — Unsaved-changes guard (modals + invoice form)
 
