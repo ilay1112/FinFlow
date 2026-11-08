@@ -1,7 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import type { Invoice, BusinessType, InvoiceItem } from '../context/FinanceContext';
+import type { Invoice, BusinessType, InvoiceItem, DocumentType } from '../context/FinanceContext';
+import { recordsPayment } from '../utils/invoiceMath';
 
 interface ShareInvoiceParams {
   invoice: Invoice;
@@ -21,8 +22,17 @@ function formatILS(amount: number): string {
   return `₪${amount.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function docTypeLabel(type: BusinessType): string {
-  return type === 'EsekPatur' ? 'קבלה' : 'חשבונית מס';
+/** Hebrew labels for the WhatsApp message (matches he.json `invoices.doc_*`). */
+const DOC_TYPE_LABELS_HE: Record<DocumentType, string> = {
+  TaxInvoice: 'חשבונית מס',
+  Receipt: 'קבלה',
+  TaxInvoiceReceipt: 'חשבונית מס קבלה',
+  TransactionInvoice: 'חשבונית עסקה',
+};
+
+/** Legacy documents have no `documentType`; mirror the PDF template's fallback. */
+function resolveDocType(invoice: Invoice, businessType: BusinessType): DocumentType {
+  return invoice.documentType ?? (businessType === 'EsekPatur' ? 'Receipt' : 'TaxInvoice');
 }
 
 function buildItemsList(items: InvoiceItem[]): string {
@@ -37,7 +47,10 @@ function buildItemsList(items: InvoiceItem[]): string {
 
 function buildWhatsAppMessage(params: ShareInvoiceParams): string {
   const { invoice, businessName, businessType } = params;
-  const docType = docTypeLabel(businessType);
+  const resolvedType = resolveDocType(invoice, businessType);
+  const docType = DOC_TYPE_LABELS_HE[resolvedType];
+  const isPaid = recordsPayment(resolvedType);
+  const notes = invoice.notes?.trim();
   const itemsList = buildItemsList(invoice.items);
   const subtotal = invoice.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const hasVat = invoice.taxRate > 0;
@@ -45,7 +58,7 @@ function buildWhatsAppMessage(params: ShareInvoiceParams): string {
   const lines = [
     `שלום ${invoice.clientName},`,
     ``,
-    `מצורפת *${docType}* מ*${businessName}*.`,
+    `מצורפת *${docType}* מ *${businessName}*.`,
     ``,
     `*מספר מסמך:* ${invoice.id}`,
     `*תאריך הפקה:* ${formatDateIL(invoice.date)}`,
@@ -59,9 +72,13 @@ function buildWhatsAppMessage(params: ShareInvoiceParams): string {
     lines.push(`    מע״מ (${invoice.taxRate}%): ${formatILS(subtotal * invoice.taxRate / 100)}`);
   }
 
+  lines.push(``, `*סה״כ ${isPaid ? 'שולם' : 'לתשלום'}: ${formatILS(invoice.total)}*`);
+
+  if (notes) {
+    lines.push(``, `*הערות:*`, notes);
+  }
+
   lines.push(
-    ``,
-    `*סה״כ לתשלום: ${formatILS(invoice.total)}*`,
     ``,
     `תודה רבה על שיתוף הפעולה!`,
     `_${businessName}_`,
