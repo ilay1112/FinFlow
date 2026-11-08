@@ -1,8 +1,19 @@
 import { SocialLogin } from '@capgo/capacitor-social-login';
 import { Capacitor } from '@capacitor/core';
+import { loginWithGoogleWeb, fetchWebAccessToken, logoutWeb, WEB_AUTH_SCOPES } from './webAuth';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_IOS_CLIENT_ID = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID;
+
+/**
+ * Web uses our own authorization-code flow + the `api/auth.ts` Vercel function, which
+ * keeps a refresh token server-side so a sign-in lasts 7 days (see webAuth.ts). Native
+ * keeps the plugin, which refreshes on-device. Set VITE_GOOGLE_AUTH_MODE=client to fall
+ * back to the plugin's web flow (hourly sign-in) — e.g. `vite dev` without `vercel dev`.
+ */
+function isServerAuthMode(): boolean {
+  return !Capacitor.isNativePlatform() && import.meta.env.VITE_GOOGLE_AUTH_MODE !== 'client';
+}
 
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
@@ -114,6 +125,18 @@ export const authService = {
    */
   async loginWithGoogle() {
     try {
+      // Web: must open the popup synchronously inside the click gesture, i.e. BEFORE any
+      // await — loginWithGoogleWeb() opens it on its first line.
+      if (isServerAuthMode()) {
+        const result = await loginWithGoogleWeb(GOOGLE_CLIENT_ID);
+        return this.handleResult({
+          accessToken: result.accessToken,
+          expiresAt: result.expiresAt,
+          idToken: '',
+          profile: result.profile,
+        });
+      }
+
       // Ensure we are initialized before attempting login
       await this.initialize();
 
@@ -122,13 +145,7 @@ export const authService = {
       const loginOptions = {
         provider: 'google' as const,
         options: {
-          scopes: [
-            'openid',
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/gmail.send',
-          ],
+          scopes: [...WEB_AUTH_SCOPES],
           // Platform-specific options
           ...(isNative ? {
             autoSelectEnabled: true,
@@ -193,6 +210,11 @@ export const authService = {
     const token = typeof result.accessToken === 'object' 
       ? result.accessToken.token 
       : result.accessToken;
+    const expiresAt: number | undefined =
+      typeof result.expiresAt === 'number' ? result.expiresAt
+      : typeof result.accessToken === 'object' && typeof result.accessToken.expiresAt === 'number'
+        ? result.accessToken.expiresAt
+        : undefined;
 
     const rawPicture = result.profile?.image || result.profile?.picture || result.profile?.imageUrl;
     // Normalize Google picture URL for higher resolution and handle missing images
@@ -203,6 +225,7 @@ export const authService = {
     return {
       accessToken: token as string,
       idToken: result.idToken as string,
+      expiresAt,
       profile: result.profile ? {
         name: result.profile.name || '',
         email: result.profile.email || '',
@@ -219,6 +242,10 @@ export const authService = {
     // or the proactive pre-expiry timer — cannot re-write auth_token/auth_expiry after
     // the logout wipe, even if the plugin call below fails.
     logoutEpoch += 1;
+    if (isServerAuthMode()) {
+      await logoutWeb();
+      return;
+    }
     try {
       await SocialLogin.logout({ provider: 'google' });
     } catch (error) {
@@ -250,6 +277,21 @@ export const authService = {
     }
 
     // Cached token is missing or near/at expiry — attempt a silent refresh.
+    if (isServerAuthMode()) {
+      try {
+        const { accessToken, expiresAt } = await fetchWebAccessToken();
+        if (logoutEpoch !== epochAtStart) throw new AuthExpiredError();
+        localStorage.setItem('auth_token', accessToken);
+        localStorage.setItem('auth_expiry', expiresAt.toString());
+        return accessToken;
+      } catch (e) {
+        // No server session (never signed in with the new flow, or past the 7-day cap),
+        // or the server is unreachable: either way we cannot prove a live token.
+        if (!(e instanceof AuthExpiredError)) console.warn('Server token refresh failed:', e);
+        throw new AuthExpiredError();
+      }
+    }
+
     try {
       // Serialize behind plugin init. Without this, an early refresh (AuthContext
       // restore with an expired token) races initialize() as the plugin proxy's FIRST

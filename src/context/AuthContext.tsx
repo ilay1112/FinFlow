@@ -233,9 +233,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await fetchUserProfile(result.accessToken);
         }
 
-        const now = Date.now();
-        // Assume 1 hour expiry if not provided
-        const expiry = now + 3600 * 1000;
+        // Use the real expiry when the provider reports one; otherwise assume 1 hour.
+        const expiry = result.expiresAt ?? Date.now() + 3600 * 1000;
         
         try {
           localStorage.setItem('auth_token', result.accessToken);

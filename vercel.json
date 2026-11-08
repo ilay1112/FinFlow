@@ -1,12 +1,37 @@
 {
   "version": 2,
   "builds": [
-    { "src": "marketing/landing/index.html", "use": "@vercel/static" },
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+    {
+      "src": "api/auth.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "marketing/landing/index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
   ],
   "routes": [
-    { "src": "/lp/?$", "dest": "/marketing/landing/index.html" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/" }
+    {
+      "src": "/api/auth/(exchange|token|logout)",
+      "dest": "/api/auth.ts?action=$1"
+    },
+    {
+      "src": "/lp/?$",
+      "dest": "/marketing/landing/index.html"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/"
+    }
   ]
 }
